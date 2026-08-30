@@ -26,6 +26,7 @@ input,textarea,select,button{font-family:inherit}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 <script>
 firebase.initializeApp({apiKey:"AIzaSyDTZRizLtPeRf3T5e_4hv1QZnD9GddcWGs",authDomain:"gestor-obras-d996c.firebaseapp.com",projectId:"gestor-obras-d996c",storageBucket:"gestor-obras-d996c.firebasestorage.app",messagingSenderId:"314932781905",appId:"1:314932781905:web:1b2cf8b984f971b25d2970"});
@@ -72,8 +73,9 @@ const EMPTY_OBRA = {
 };
 
 /* ── UI ── */
-function Toggle({checked,onChange,label,strikethrough}) {
-  return (<div style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",userSelect:"none",padding:"5px 0"}} onClick={()=>onChange(!checked)}><div style={{width:38,height:21,borderRadius:11,background:checked?"#16a34a":"#cbd5e1",position:"relative",transition:"background .2s",flexShrink:0}}><div style={{width:17,height:17,borderRadius:9,background:"#fff",position:"absolute",top:2,left:checked?19:2,transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,.2)"}}/></div><span style={{fontSize:13,color:checked&&strikethrough?"#94a3b8":"#1e293b",textDecoration:strikethrough&&checked?"line-through":"none"}}>{label}</span></div>);
+function Toggle({checked,onChange,label,strikethrough,dark}) {
+  const txtColor = dark ? (checked&&strikethrough?"#64748b":"#e2e8f0") : (checked&&strikethrough?"#94a3b8":"#1e293b");
+  return (<div style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",userSelect:"none",padding:"5px 0"}} onClick={()=>onChange(!checked)}><div style={{width:38,height:21,borderRadius:11,background:checked?"#16a34a":"#cbd5e1",position:"relative",transition:"background .2s",flexShrink:0}}><div style={{width:17,height:17,borderRadius:9,background:"#fff",position:"absolute",top:2,left:checked?19:2,transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,.2)"}}/></div><span style={{fontSize:13,color:txtColor,textDecoration:strikethrough&&checked?"line-through":"none"}}>{label}</span></div>);
 }
 function BackBtn({onClick,label}) {
   return (<button onClick={onClick} style={{background:"none",border:"none",color:"rgba(255,255,255,.6)",fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6,padding:"6px 0",fontWeight:500}}><span style={{fontSize:18}}>←</span> {label||"Voltar"}</button>);
@@ -209,6 +211,298 @@ function getActivity(obras) {
   acts.sort((a,b)=>new Date(b.date)-new Date(a.date));return acts.slice(0,10);
 }
 
+/* ── PDF Report ── */
+function generateWeeklyPDF(obras, events, todos) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const pw = 210, ph = 297, mx = 15, cw = pw - mx * 2;
+  let cy = 0;
+  const today = new Date();
+  const dateStr = today.getDate() + " de " + MP[today.getMonth()] + " de " + today.getFullYear();
+
+  const checkPage = (need) => { if (cy + need > ph - 15) { doc.addPage(); cy = 15; } };
+  const drawLine = (y, color) => { doc.setDrawColor(...(color || [241, 245, 249])); doc.setLineWidth(0.3); doc.line(mx, y, pw - mx, y); };
+
+  // Header
+  doc.setFillColor(15, 23, 42); doc.rect(0, 0, pw, 36, "F");
+  doc.setFillColor(245, 158, 11); doc.rect(0, 34, pw, 2, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.setTextColor(255, 255, 255);
+  doc.text("GestorObras", mx, 16);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(148, 163, 184);
+  doc.text("Relatório Semanal - " + dateStr, mx, 24);
+  doc.text("E-REDES | Oliveira de Azemeis", mx, 30);
+  cy = 44;
+
+  // KPIs
+  const a = obras.filter(o => !o.arquivada);
+  const active = a.filter(o => !o.concluida);
+  const done = a.filter(o => o.concluida);
+  const alerts = getAlerts(obras);
+  const totalTarefas = active.reduce((s, o) => s + (o.tarefas || []).filter(t => !t.concluida).length, 0);
+
+  const kpis = [
+    { n: active.length, l: "Ativas", color: [59, 130, 246] },
+    { n: done.length, l: "Concluídas", color: [22, 163, 74] },
+    { n: alerts.length, l: "Alertas", color: [220, 38, 38] },
+    { n: totalTarefas, l: "Tarefas Pend.", color: [245, 158, 11] }
+  ];
+  const kw = (cw - 9) / 4;
+  kpis.forEach((k, i) => {
+    const kx = mx + i * (kw + 3);
+    doc.setFillColor(241, 245, 249); doc.roundedRect(kx, cy, kw, 22, 3, 3, "F");
+    doc.setFont("helvetica", "bold"); doc.setFontSize(20); doc.setTextColor(...k.color);
+    doc.text(String(k.n), kx + kw / 2, cy + 13, { align: "center" });
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(100, 116, 139);
+    doc.text(k.l, kx + kw / 2, cy + 19, { align: "center" });
+  });
+  cy += 30;
+
+  // Category breakdown
+  doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(15, 23, 42);
+  doc.text("Progresso por Categoria", mx, cy); cy += 6;
+  TIPOS.forEach(t => {
+    const m = TM[t];
+    const ta = a.filter(o => o.tipo === t);
+    const ac = ta.filter(o => !o.concluida).length;
+    const dn = ta.filter(o => o.concluida).length;
+    const tot = ta.length;
+    const pct = tot > 0 ? Math.round((dn / tot) * 100) : 0;
+    const colors = { RP: [30, 58, 95], OCR: [120, 53, 15], PLR: [20, 83, 45] };
+    doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...(colors[t] || [0, 0, 0]));
+    doc.text(t + " - " + m.label, mx, cy);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(100, 116, 139);
+    doc.text(ac + " ativas / " + dn + " concluídas / " + tot + " total (" + pct + "%)", mx + 50, cy);
+    // Progress bar
+    const bx = mx, by = cy + 2, bw2 = cw, bh = 3;
+    doc.setFillColor(226, 232, 240); doc.roundedRect(bx, by, bw2, bh, 1, 1, "F");
+    if (pct > 0) { doc.setFillColor(...(colors[t] || [0, 0, 0])); doc.roundedRect(bx, by, bw2 * pct / 100, bh, 1, 1, "F"); }
+    cy += 10;
+  });
+  cy += 4;
+
+  // Alerts
+  if (alerts.length > 0) {
+    drawLine(cy - 2); cy += 2;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(220, 38, 38);
+    doc.text("ALERTAS (" + alerts.length + ")", mx, cy); cy += 6;
+    alerts.slice(0, 12).forEach(al => {
+      checkPage(6);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(15, 23, 42);
+      doc.text((al.obra.numero || "-"), mx + 2, cy);
+      doc.setFont("helvetica", "normal"); doc.setTextColor(100, 116, 139);
+      doc.text(al.msg + " | " + (al.obra.concelho || "") + " | " + al.obra.tipo, mx + 35, cy);
+      cy += 5;
+    });
+    cy += 4;
+  }
+
+  // Next 7 days
+  drawLine(cy - 2); cy += 2;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(15, 23, 42);
+  doc.text("PROXIMOS 7 DIAS", mx, cy); cy += 6;
+  let hasEvents = false;
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today); d.setDate(d.getDate() + i); d.setHours(0, 0, 0, 0);
+    const key = toKey(d);
+    const dn2 = i === 0 ? "Hoje" : i === 1 ? "Amanhã" : WD[d.getDay()];
+    const de = (events || []).filter(e => e.data === key).sort((x, y) => (x.hora || "").localeCompare(y.hora || ""));
+    const co = active.filter(o => o.corteMarcado && o.dataCorte === key);
+    if (de.length > 0 || co.length > 0) {
+      hasEvents = true;
+      checkPage(8);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(245, 158, 11);
+      doc.text(dn2 + " (" + fmtD(key) + ")", mx + 2, cy); cy += 4;
+      co.forEach(c => {
+        doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(234, 88, 12);
+        doc.text("  [CORTE] " + (c.numero || "-"), mx + 4, cy); cy += 4;
+      });
+      de.forEach(e => {
+        doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(51, 65, 85);
+        doc.text("  " + (e.hora ? e.hora + " " : "- ") + e.texto, mx + 4, cy); cy += 4;
+      });
+      cy += 2;
+    }
+  }
+  if (!hasEvents) {
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(148, 163, 184);
+    doc.text("Semana limpa - sem eventos agendados", mx + 2, cy); cy += 6;
+  }
+
+  // Obras list per category
+  TIPOS.forEach(t => {
+    const list = a.filter(o => o.tipo === t && !o.concluida);
+    if (list.length === 0) return;
+    checkPage(16);
+    drawLine(cy); cy += 4;
+    const m = TM[t];
+    const colors = { RP: [30, 58, 95], OCR: [120, 53, 15], PLR: [20, 83, 45] };
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(...(colors[t] || [0, 0, 0]));
+    doc.text(t + " - Obras Ativas (" + list.length + ")", mx, cy); cy += 5;
+    // Table header
+    doc.setFillColor(241, 245, 249); doc.rect(mx, cy - 1, cw, 5, "F");
+    doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(100, 116, 139);
+    doc.text("Número", mx + 2, cy + 2.5);
+    doc.text("Designação", mx + 30, cy + 2.5);
+    doc.text("Concelho", mx + 100, cy + 2.5);
+    doc.text("Tags", mx + 130, cy + 2.5);
+    doc.text("Tarefas", mx + 162, cy + 2.5);
+    cy += 6;
+    list.forEach(o => {
+      checkPage(6);
+      const tP2 = (o.tarefas || []).filter(t2 => !t2.concluida).length;
+      const tT2 = (o.tarefas || []).length;
+      doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(15, 23, 42);
+      doc.text((o.numero || "-").slice(0, 18), mx + 2, cy);
+      doc.setTextColor(71, 85, 105);
+      doc.text((o.designacao || "-").slice(0, 45), mx + 30, cy);
+      doc.text((o.concelho || "-").slice(0, 18), mx + 100, cy);
+      doc.setTextColor(148, 163, 184);
+      doc.text((o.tags || []).slice(0, 3).join(", ").slice(0, 20), mx + 130, cy);
+      doc.text(tT2 > 0 ? (tT2 - tP2) + "/" + tT2 : "-", mx + 165, cy);
+      cy += 4.5;
+    });
+    cy += 4;
+  });
+
+  // Pending todos
+  const pendingTodos = (todos || []).filter(t => !t.concluida);
+  if (pendingTodos.length > 0) {
+    checkPage(14);
+    drawLine(cy); cy += 4;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(15, 23, 42);
+    doc.text("TAREFAS GERAIS PENDENTES (" + pendingTodos.length + ")", mx, cy); cy += 5;
+    pendingTodos.slice(0, 15).forEach(t => {
+      checkPage(5);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(51, 65, 85);
+      doc.text("[ ] " + t.texto.slice(0, 80), mx + 2, cy); cy += 4;
+    });
+  }
+
+  // Footer on each page
+  const totalPages = doc.internal.getNumberOfPages();
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+    doc.setDrawColor(245, 158, 11); doc.setLineWidth(0.5); doc.line(mx, ph - 10, pw - mx, ph - 10);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(148, 163, 184);
+    doc.text("GestorObras | Relatorio gerado a " + dateStr, mx, ph - 6);
+    doc.text("Página " + p + " de " + totalPages, pw - mx, ph - 6, { align: "right" });
+  }
+
+  doc.save("GestorObras_Relatorio_" + toKey(today) + ".pdf");
+}
+
+/* ── Notifications System ── */
+function useNotifications(obras, events) {
+  const [notifEnabled, setNotifEnabled] = useState(false);
+  const [notifSettings, setNotifSettings] = useState(() => {
+    try { const s = localStorage.getItem("go-notif-settings"); return s ? JSON.parse(s) : { alerts: true, events: true, cortes: true, checkInterval: 30 }; }
+    catch(e) { return { alerts: true, events: true, cortes: true, checkInterval: 30 }; }
+  });
+  const lastNotifRef = useRef({});
+
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "granted") setNotifEnabled(true);
+  }, []);
+
+  const requestPermission = useCallback(async () => {
+    if (!("Notification" in window)) return false;
+    const p = await Notification.requestPermission();
+    const ok = p === "granted";
+    setNotifEnabled(ok);
+    return ok;
+  }, []);
+
+  const saveSettings = useCallback((s) => {
+    setNotifSettings(s);
+    try { localStorage.setItem("go-notif-settings", JSON.stringify(s)); } catch(e) {}
+  }, []);
+
+  const sendNotif = useCallback((id, title, body, tag) => {
+    if (!notifEnabled) return;
+    const now = Date.now();
+    const last = lastNotifRef.current[id] || 0;
+    if (now - last < 1800000) return; // 30 min cooldown per notification
+    lastNotifRef.current[id] = now;
+    try {
+      new Notification(title, { body, icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏗️</text></svg>", tag: tag || id, silent: false });
+    } catch(e) { console.warn("Notification failed:", e); }
+  }, [notifEnabled]);
+
+  // Periodic check
+  useEffect(() => {
+    if (!notifEnabled) return;
+    const check = () => {
+      const now = new Date();
+      const todayKey = toKey(now);
+      const tomorrowKey = toKey(new Date(now.getTime() + 86400000));
+
+      // Check today's events
+      if (notifSettings.events) {
+        (events || []).filter(e => e.data === todayKey).forEach(e => {
+          sendNotif("ev-" + e.id, "📅 Evento Hoje", (e.hora ? e.hora + " — " : "") + e.texto, "event");
+        });
+      }
+
+      // Check cortes
+      if (notifSettings.cortes) {
+        (obras || []).filter(o => !o.arquivada && !o.concluida && o.corteMarcado).forEach(o => {
+          if (o.dataCorte === todayKey) {
+            sendNotif("corte-" + o.id, "🟠 Corte HOJE!", (o.numero || "—") + " — " + (o.designacao || ""), "corte");
+          } else if (o.dataCorte === tomorrowKey) {
+            sendNotif("corte-tmr-" + o.id, "⚠️ Corte Amanhã", (o.numero || "—") + " — " + (o.designacao || ""), "corte");
+          }
+        });
+      }
+
+      // Check alerts
+      if (notifSettings.alerts) {
+        const alerts = getAlerts(obras);
+        const critical = alerts.filter(a => a.tipo === "corte" || a.dias > 20);
+        if (critical.length > 0) {
+          sendNotif("alerts-batch", "🔔 " + critical.length + " Alertas Críticos", critical.slice(0, 3).map(a => (a.obra.numero || "—") + ": " + a.msg).join(" | "), "alerts");
+        }
+      }
+    };
+    check();
+    const interval = setInterval(check, (notifSettings.checkInterval || 30) * 60000);
+    return () => clearInterval(interval);
+  }, [notifEnabled, notifSettings, obras, events, sendNotif]);
+
+  return { notifEnabled, notifSettings, requestPermission, saveSettings };
+}
+
+function NotifSettingsPanel({ notif, onClose }) {
+  const [s, setS] = useState({ ...notif.notifSettings });
+  const save = () => { notif.saveSettings(s); onClose(); };
+  const inp = { width: "100%", padding: "5px 7px", borderRadius: 4, border: "1px solid #475569", background: "#0f172a", color: "#e2e8f0", fontSize: 11, outline: "none", boxSizing: "border-box" };
+  return (
+    <WBox style={{ position: "relative" }}>
+      <WTitle icon="🔔" text="Notificações" right={<button onClick={onClose} style={{ background: "none", border: "1px solid #475569", borderRadius: 4, color: "#94a3b8", cursor: "pointer", fontSize: 10, padding: "2px 8px" }}>✕</button>} />
+      {!notif.notifEnabled ? (
+        <div style={{ textAlign: "center", padding: "8px 0" }}>
+          <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 8 }}>As notificações estão desativadas</div>
+          <button onClick={async () => { const ok = await notif.requestPermission(); if (!ok) alert("Notificações bloqueadas pelo browser. Verifica as permissões."); }}
+            style={{ padding: "6px 16px", borderRadius: 6, border: "none", background: "#f59e0b", color: "#0f172a", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>
+            Ativar Notificações
+          </button>
+        </div>
+      ) : (
+        <div>
+          <div style={{ fontSize: 10, color: "#16a34a", fontWeight: 600, marginBottom: 8 }}>✅ Notificações ativas</div>
+          <Toggle checked={s.events} onChange={v => setS({ ...s, events: v })} label="Eventos do calendário (hoje)" dark />
+          <Toggle checked={s.cortes} onChange={v => setS({ ...s, cortes: v })} label="Cortes (hoje e amanhã)" dark />
+          <Toggle checked={s.alerts} onChange={v => setS({ ...s, alerts: v })} label="Alertas críticos de obras" dark />
+          <div style={{ marginTop: 6 }}>
+            <div style={{ fontSize: 9, color: "#64748b", marginBottom: 2 }}>INTERVALO DE VERIFICAÇÃO (min)</div>
+            <input type="number" min="5" max="120" style={inp} value={s.checkInterval} onChange={e => setS({ ...s, checkInterval: parseInt(e.target.value) || 30 })} />
+          </div>
+          <button onClick={save} style={{ marginTop: 8, padding: "5px 0", borderRadius: 4, border: "none", background: "#f59e0b", color: "#0f172a", fontWeight: 700, fontSize: 11, cursor: "pointer", width: "100%" }}>Guardar</button>
+        </div>
+      )}
+    </WBox>
+  );
+}
+
 /* ── Calendar ── */
 function CalendarW({events,onAdd,onRemove}) {
   const [vw,setVw]=useState(new Date());const [sel,setSel]=useState(null);const [nT,setNT]=useState("");const [nH,setNH]=useState("");
@@ -271,17 +565,26 @@ function ContactsW({contacts,onAdd,onRemove}) {
 }
 
 /* ── LANDING ── */
-function Landing({obras,onType,onNew,onSelObra,events,onAddEv,onRemEv,todos,onAddTd,onTogTd,onRemTd,contacts,onAddCt,onRemCt}) {
+function Landing({obras,onType,onNew,onSelObra,events,onAddEv,onRemEv,todos,onAddTd,onTogTd,onRemTd,contacts,onAddCt,onRemCt,notif}) {
   const a=obras.filter(o=>!o.arquivada);const active=a.filter(o=>!o.concluida);const done=a.filter(o=>o.concluida);
   const alerts=useMemo(()=>getAlerts(obras),[obras]);const activity=useMemo(()=>getActivity(obras),[obras]);
   const totalTarefas=active.reduce((s,o)=>s+(o.tarefas||[]).filter(t=>!t.concluida).length,0);
   const next7=useMemo(()=>{const res=[];const now=new Date();now.setHours(0,0,0,0);for(let i=0;i<7;i++){const d=new Date(now);d.setDate(d.getDate()+i);const key=toKey(d);const dn=i===0?"Hoje":i===1?"Amanhã":WD[d.getDay()];const de=(events||[]).filter(e=>e.data===key).sort((x,y)=>(x.hora||"").localeCompare(y.hora||""));const co=active.filter(o=>o.corteMarcado&&o.dataCorte===key);if(de.length>0||co.length>0)res.push({day:dn,date:fmtD(key),events:de,cortes:co});}return res;},[events,active]);
   const today=new Date();const dateStr=today.getDate()+" de "+MP[today.getMonth()]+" de "+today.getFullYear();
+  const [showNotifPanel,setShowNotifPanel]=useState(false);
+  const [pdfGenerating,setPdfGenerating]=useState(false);
+  const handlePDF=()=>{setPdfGenerating(true);setTimeout(()=>{try{generateWeeklyPDF(obras,events,todos);}catch(e){console.error(e);alert("Erro ao gerar PDF: "+e.message);}setPdfGenerating(false);},100);};
 
   return (
     <div style={{minHeight:"100vh",background:"#0f172a"}}>
-      <div style={{padding:"28px 24px 16px",background:"linear-gradient(180deg,#1e293b 0%,#0f172a 100%)"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><div><h1 style={{fontSize:24,fontWeight:800,color:"#fff",margin:0,letterSpacing:-.8}}>Gestor<span style={{color:"#f59e0b"}}>Obras</span></h1><div style={{fontSize:11,color:"#64748b",marginTop:2}}>{dateStr}</div></div><div style={{fontSize:9,color:"#475569",background:"#1e293b",padding:"4px 10px",borderRadius:6,border:"1px solid #334155",fontWeight:600,letterSpacing:1}}>E-REDES · OAZ</div></div></div>
+      <div style={{padding:"28px 24px 16px",background:"linear-gradient(180deg,#1e293b 0%,#0f172a 100%)"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><div><h1 style={{fontSize:24,fontWeight:800,color:"#fff",margin:0,letterSpacing:-.8}}>Gestor<span style={{color:"#f59e0b"}}>Obras</span></h1><div style={{fontSize:11,color:"#64748b",marginTop:2}}>{dateStr}</div></div><div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <button onClick={handlePDF} disabled={pdfGenerating} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:6,color:pdfGenerating?"#475569":"#f59e0b",cursor:pdfGenerating?"wait":"pointer",fontSize:10,padding:"4px 8px",fontWeight:600,display:"flex",alignItems:"center",gap:3}}>{pdfGenerating?"⏳":"📄"} PDF</button>
+            <button onClick={()=>setShowNotifPanel(!showNotifPanel)} style={{background:showNotifPanel?"#f59e0b20":"#1e293b",border:"1px solid "+(showNotifPanel?"#f59e0b40":"#334155"),borderRadius:6,color:notif.notifEnabled?"#16a34a":"#94a3b8",cursor:"pointer",fontSize:10,padding:"4px 8px",fontWeight:600,display:"flex",alignItems:"center",gap:3,position:"relative"}}>{notif.notifEnabled?"🔔":"🔕"}{notif.notifEnabled&&<span style={{width:5,height:5,borderRadius:3,background:"#16a34a",position:"absolute",top:2,right:2}}/>}</button>
+            <div style={{fontSize:9,color:"#475569",background:"#1e293b",padding:"4px 10px",borderRadius:6,border:"1px solid #334155",fontWeight:600,letterSpacing:1}}>E-REDES · OAZ</div>
+          </div></div></div>
       <div style={{padding:"0 20px 28px",maxWidth:820,margin:"0 auto"}}>
+        {/* Notification Settings Panel */}
+        {showNotifPanel && <div style={{marginBottom:12}}><NotifSettingsPanel notif={notif} onClose={()=>setShowNotifPanel(false)} /></div>}
         {/* KPIs */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
           {[{n:active.length,l:"Ativas",icon:"📂",color:"#3b82f6"},{n:done.length,l:"Concluídas",icon:"✅",color:"#16a34a"},{n:alerts.length,l:"Alertas",icon:"🔔",color:alerts.length>0?"#dc2626":"#64748b"},{n:totalTarefas,l:"Tarefas",icon:"📋",color:totalTarefas>0?"#f59e0b":"#64748b"}].map((k,i)=>(<div key={i} style={{background:"#1e293b",borderRadius:10,padding:"14px 12px",border:"1px solid #334155",textAlign:"center"}}><div style={{fontSize:18,marginBottom:4}}>{k.icon}</div><div style={{fontSize:24,fontWeight:800,color:k.color}}>{k.n}</div><div style={{fontSize:10,color:"#64748b",fontWeight:500,marginTop:2}}>{k.l}</div></div>))}
@@ -463,6 +766,7 @@ function ObraPage({obra:init,onBack,onSave,onDelete,isNew}) {
 function App() {
   const [obras,setObras]=useState([]);const [events,setEvents]=useState([]);const [todos,setTodos]=useState([]);const [contacts,setContacts]=useState([]);
   const [loaded,setLoaded]=useState(false);const [page,setPage]=useState("home");const [cT,setCT]=useState(null);const [cO,setCO]=useState(null);const [isN,setIsN]=useState(false);
+  const notif=useNotifications(obras,events);
 
   useEffect(()=>{
     let count=0;const done=()=>{count++;if(count>=4){setLoaded(true);}};
@@ -495,7 +799,7 @@ function App() {
 
   if (page==="obra"&&cO) return (<ObraPage obra={cO} isNew={isN} onBack={()=>cT?nCat(cT):nH()} onSave={doSv} onDelete={doDl}/>);
   if (page==="cat"&&cT) return (<Category tipo={cT} obras={obras} onBack={nH} onSelect={nOb} onNew={()=>nNew(cT)}/>);
-  return (<Landing obras={obras} onType={nCat} onNew={()=>nNew()} onSelObra={nOA} events={events} onAddEv={e=>pE([...events,e])} onRemEv={id=>pE(events.filter(e=>e.id!==id))} todos={todos} onAddTd={t=>pT([...todos,t])} onTogTd={id=>pT(todos.map(t=>t.id===id?{...t,concluida:!t.concluida}:t))} onRemTd={id=>pT(todos.filter(t=>t.id!==id))} contacts={contacts} onAddCt={c=>pC([...contacts,c])} onRemCt={id=>pC(contacts.filter(c=>c.id!==id))}/>);
+  return (<Landing obras={obras} onType={nCat} onNew={()=>nNew()} onSelObra={nOA} events={events} onAddEv={e=>pE([...events,e])} onRemEv={id=>pE(events.filter(e=>e.id!==id))} todos={todos} onAddTd={t=>pT([...todos,t])} onTogTd={id=>pT(todos.map(t=>t.id===id?{...t,concluida:!t.concluida}:t))} onRemTd={id=>pT(todos.filter(t=>t.id!==id))} contacts={contacts} onAddCt={c=>pC([...contacts,c])} onRemCt={id=>pC(contacts.filter(c=>c.id!==id))} notif={notif}/>);
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
