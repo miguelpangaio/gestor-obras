@@ -7,6 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0f172a">
 <title>GestorObras</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#0f172a;font-family:'Inter',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
@@ -14,74 +15,29 @@ input,textarea,select,button{font-family:inherit}
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:#334155;border-radius:2px}
-.sync-bar{position:fixed;top:0;left:0;right:0;height:3px;background:#f59e0b;z-index:9999;animation:pulse 1s infinite}
-@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
+.leaflet-container{border-radius:10px;z-index:1}
+.tag-btn{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;cursor:pointer;margin:2px;border:1px solid;transition:all .15s}
 </style>
 </head>
 <body>
 <div id="root"></div>
-<div id="sync-indicator"></div>
-
-<!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
-
-<!-- React -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
-
 <script>
-// Firebase init
-firebase.initializeApp({
-  apiKey: "AIzaSyDTZRizLtPeRf3T5e_4hv1QZnD9GddcWGs",
-  authDomain: "gestor-obras-d996c.firebaseapp.com",
-  projectId: "gestor-obras-d996c",
-  storageBucket: "gestor-obras-d996c.firebasestorage.app",
-  messagingSenderId: "314932781905",
-  appId: "1:314932781905:web:1b2cf8b984f971b25d2970"
-});
-var db = firebase.firestore();
-
-// Storage layer with Firebase + localStorage cache
-window.dataStore = {
-  save: function(collection, data) {
-    try { localStorage.setItem('go-'+collection, JSON.stringify(data)); } catch(e) {}
-    db.collection('userData').doc(collection).set({ data: JSON.stringify(data), updated: new Date().toISOString() })
-      .catch(function(e) { console.warn('Firebase save error:', e); });
-  },
-  load: function(collection, callback) {
-    // Load from localStorage first (instant)
-    var cached = null;
-    try { var raw = localStorage.getItem('go-'+collection); if(raw) cached = JSON.parse(raw); } catch(e) {}
-    if (cached) callback(cached);
-    // Then sync from Firebase
-    db.collection('userData').doc(collection).get()
-      .then(function(doc) {
-        if (doc.exists) {
-          var data = JSON.parse(doc.data().data);
-          try { localStorage.setItem('go-'+collection, JSON.stringify(data)); } catch(e) {}
-          callback(data);
-        } else if (!cached) {
-          callback([]);
-        }
-      })
-      .catch(function(e) { console.warn('Firebase load error:', e); if(!cached) callback([]); });
-  },
-  listen: function(collection, callback) {
-    return db.collection('userData').doc(collection).onSnapshot(function(doc) {
-      if (doc.exists) {
-        var data = JSON.parse(doc.data().data);
-        try { localStorage.setItem('go-'+collection, JSON.stringify(data)); } catch(e) {}
-        callback(data);
-      }
-    }, function(e) { console.warn('Firebase listen error:', e); });
-  }
+firebase.initializeApp({apiKey:"AIzaSyDTZRizLtPeRf3T5e_4hv1QZnD9GddcWGs",authDomain:"gestor-obras-d996c.firebaseapp.com",projectId:"gestor-obras-d996c",storageBucket:"gestor-obras-d996c.firebasestorage.app",messagingSenderId:"314932781905",appId:"1:314932781905:web:1b2cf8b984f971b25d2970"});
+var db=firebase.firestore();
+window.dataStore={
+  save:function(c,d){try{localStorage.setItem('go-'+c,JSON.stringify(d));}catch(e){}db.collection('userData').doc(c).set({data:JSON.stringify(d),updated:new Date().toISOString()}).catch(function(e){console.warn(e);});},
+  load:function(c,cb){var cached=null;try{var r=localStorage.getItem('go-'+c);if(r)cached=JSON.parse(r);}catch(e){}if(cached)cb(cached);db.collection('userData').doc(c).get().then(function(doc){if(doc.exists){var d=JSON.parse(doc.data().data);try{localStorage.setItem('go-'+c,JSON.stringify(d));}catch(e){}cb(d);}else if(!cached){cb([]);}}).catch(function(e){if(!cached)cb([]);});},
+  listen:function(c,cb){return db.collection('userData').doc(c).onSnapshot(function(doc){if(doc.exists){var d=JSON.parse(doc.data().data);try{localStorage.setItem('go-'+c,JSON.stringify(d));}catch(e){}cb(d);}},function(e){console.warn(e);});}
 };
 </script>
-
 <script type="text/babel">
-const {useState,useEffect,useCallback,useMemo} = React;
+const {useState,useEffect,useCallback,useMemo,useRef} = React;
 
 const TIPOS = ["RP","OCR","PLR"];
 const TM = {
@@ -89,16 +45,20 @@ const TM = {
   OCR:{label:"OCR",desc:"Conservação e reparação",icon:"🔧",bg:"linear-gradient(135deg,#78350f,#d97706)",accent:"#d97706",card:"#fef3c7",dark:"#78350f"},
   PLR:{label:"PLR",desc:"Pedidos de ligação",icon:"⚡",bg:"linear-gradient(135deg,#14532d,#16a34a)",accent:"#16a34a",card:"#dcfce7",dark:"#14532d"}
 };
+const TAGS_PRESET = ["Urgente","Aguarda PSE","Aguarda CM","Aguarda Licença","Aguarda DGEG","Aguarda Cliente","Em Execução","Parada","Prioridade"];
+const TAG_COLORS = {"Urgente":"#dc2626","Aguarda PSE":"#d97706","Aguarda CM":"#8b5cf6","Aguarda Licença":"#3b82f6","Aguarda DGEG":"#6366f1","Aguarda Cliente":"#ec4899","Em Execução":"#16a34a","Parada":"#ef4444","Prioridade":"#f59e0b"};
+const WC = {0:"☀️",1:"🌤️",2:"⛅",3:"☁️",45:"🌫️",48:"🌫️",51:"🌦️",53:"🌦️",55:"🌧️",61:"🌧️",63:"🌧️",65:"🌧️",71:"❄️",73:"❄️",75:"❄️",77:"❄️",80:"🌦️",81:"🌧️",82:"🌧️",85:"❄️",86:"❄️",95:"⛈️",96:"⛈️",99:"⛈️"};
 
 const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-const fmtD = (d) => {if(!d) return "—";return new Date(d).toLocaleDateString("pt-PT",{day:"2-digit",month:"2-digit",year:"numeric"});};
-const fmtDT = (d) => {if(!d) return "";return new Date(d).toLocaleDateString("pt-PT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});};
+const fmtD = (d) => {if (!d) return "—";return new Date(d).toLocaleDateString("pt-PT",{day:"2-digit",month:"2-digit",year:"numeric"});};
+const fmtDT = (d) => {if (!d) return "";return new Date(d).toLocaleDateString("pt-PT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});};
 const daysBetween = (a,b) => Math.floor((new Date(b)-new Date(a))/86400000);
 const daysAgo = (d) => d ? daysBetween(d,new Date().toISOString()) : 9999;
 const toKey = (d) => d.toISOString().slice(0,10);
 const MP = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 const DP2 = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"];
 const WD = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
+const WDSHORT = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 const CC = ["Colega","PSE","Entidade","Outro"];
 
 const EMPTY_OBRA = {
@@ -107,117 +67,156 @@ const EMPTY_OBRA = {
   estadoLicenciamento:"",pssRecebido:false,obraCompleta:false,reuniaoTerreno:false,
   reuniaoEntidades:false,problemasMateriais:false,notasMateriais:"",corteMarcado:false,
   dataCorte:"",sitEncerrado:false,latitude:"",longitude:"",dps:[],tarefas:[],notas:[],
-  historicoEstados:[],dataCriacao:"",concluida:false,arquivada:false,alertaDias:10
+  historicoEstados:[],visitas:[],tags:[],
+  dataCriacao:"",concluida:false,arquivada:false,alertaDias:10
 };
 
-/* ── UI Components ── */
-
+/* ── UI ── */
 function Toggle({checked,onChange,label,strikethrough}) {
-  return (
-    <div style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",userSelect:"none",padding:"5px 0"}} onClick={()=>onChange(!checked)}>
-      <div style={{width:38,height:21,borderRadius:11,background:checked?"#16a34a":"#cbd5e1",position:"relative",transition:"background .2s",flexShrink:0}}>
-        <div style={{width:17,height:17,borderRadius:9,background:"#fff",position:"absolute",top:2,left:checked?19:2,transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,.2)"}}/>
-      </div>
-      <span style={{fontSize:13,color:checked&&strikethrough?"#94a3b8":"#1e293b",textDecoration:strikethrough&&checked?"line-through":"none"}}>{label}</span>
-    </div>
-  );
+  return (<div style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",userSelect:"none",padding:"5px 0"}} onClick={()=>onChange(!checked)}><div style={{width:38,height:21,borderRadius:11,background:checked?"#16a34a":"#cbd5e1",position:"relative",transition:"background .2s",flexShrink:0}}><div style={{width:17,height:17,borderRadius:9,background:"#fff",position:"absolute",top:2,left:checked?19:2,transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,.2)"}}/></div><span style={{fontSize:13,color:checked&&strikethrough?"#94a3b8":"#1e293b",textDecoration:strikethrough&&checked?"line-through":"none"}}>{label}</span></div>);
 }
-
 function BackBtn({onClick,label}) {
-  return (
-    <button onClick={onClick} style={{background:"none",border:"none",color:"rgba(255,255,255,.6)",fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6,padding:"6px 0",fontWeight:500}}>
-      <span style={{fontSize:18}}>←</span> {label||"Voltar"}
-    </button>
-  );
+  return (<button onClick={onClick} style={{background:"none",border:"none",color:"rgba(255,255,255,.6)",fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6,padding:"6px 0",fontWeight:500}}><span style={{fontSize:18}}>←</span> {label||"Voltar"}</button>);
 }
-
 function Pill({active,label,color}) {
-  const c = color||"#16a34a";
-  return (
-    <div style={{display:"flex",alignItems:"center",gap:5,padding:"3px 7px",borderRadius:5,background:active?c+"14":"#f1f5f9",border:"1px solid "+(active?c+"30":"#e2e8f0"),fontSize:10,color:active?c:"#94a3b8",fontWeight:500}}>
-      <span style={{width:5,height:5,borderRadius:3,background:active?c:"#cbd5e1"}}/>{label}
-    </div>
-  );
+  const c=color||"#16a34a";
+  return (<div style={{display:"flex",alignItems:"center",gap:5,padding:"3px 7px",borderRadius:5,background:active?c+"14":"#f1f5f9",border:"1px solid "+(active?c+"30":"#e2e8f0"),fontSize:10,color:active?c:"#94a3b8",fontWeight:500}}><span style={{width:5,height:5,borderRadius:3,background:active?c:"#cbd5e1"}}/>{label}</div>);
 }
-
 function MapEmbed({lat,lng}) {
-  if (!lat||!lng||isNaN(lat)||isNaN(lng)) {
-    return (<div style={{height:150,borderRadius:10,background:"#f1f5f9",display:"flex",alignItems:"center",justifyContent:"center",border:"2px dashed #cbd5e1",color:"#94a3b8",fontSize:12}}>📍 Sem coordenadas</div>);
-  }
-  const url = "https://www.openstreetmap.org/export/embed.html?bbox="+(lng-.006)+"%2C"+(lat-.004)+"%2C"+(lng+.006)+"%2C"+(lat+.004)+"&layer=mapnik&marker="+lat+"%2C"+lng;
+  if (!lat||!lng||isNaN(lat)||isNaN(lng)) return (<div style={{height:150,borderRadius:10,background:"#f1f5f9",display:"flex",alignItems:"center",justifyContent:"center",border:"2px dashed #cbd5e1",color:"#94a3b8",fontSize:12}}>📍 Sem coordenadas</div>);
+  const url="https://www.openstreetmap.org/export/embed.html?bbox="+(lng-.006)+"%2C"+(lat-.004)+"%2C"+(lng+.006)+"%2C"+(lat+.004)+"&layer=mapnik&marker="+lat+"%2C"+lng;
   return (<div style={{borderRadius:10,overflow:"hidden",border:"1px solid #e2e8f0",height:150}}><iframe src={url} width="100%" height="150" style={{border:0,display:"block"}} title="Mapa" loading="lazy"/></div>);
 }
-
 function WBox({children,style:sx}) {
   return (<div style={{background:"#1e293b",borderRadius:12,padding:14,border:"1px solid #334155",...sx}}>{children}</div>);
 }
-
 function WTitle({icon,text,right}) {
+  return (<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><div style={{fontSize:12,fontWeight:700,color:"#fff",display:"flex",alignItems:"center",gap:6}}>{icon} {text}</div>{right}</div>);
+}
+function TagBadge({tag,small,onClick,removable,onRemove}) {
+  const c = TAG_COLORS[tag]||"#64748b";
+  return (<span onClick={onClick} style={{display:"inline-flex",alignItems:"center",gap:3,padding:small?"1px 6px":"2px 8px",borderRadius:10,fontSize:small?9:10,fontWeight:600,background:c+"18",color:c,border:"1px solid "+c+"30",cursor:onClick?"pointer":"default"}}>{tag}{removable && <span onClick={(e)=>{e.stopPropagation();onRemove();}} style={{cursor:"pointer",marginLeft:2,opacity:.6}}>×</span>}</span>);
+}
+
+/* ── Weather Widget ── */
+const WEATHER_LOCATIONS = [
+  {name:"Santa Maria da Feira",lat:40.9273,lng:-8.5425},
+  {name:"Oliveira de Azeméis",lat:40.8387,lng:-8.4774},
+  {name:"São João da Madeira",lat:40.9005,lng:-8.4907},
+  {name:"Ovar",lat:40.8597,lng:-8.6266},
+  {name:"Vale de Cambra",lat:40.8431,lng:-8.3955},
+  {name:"Arouca",lat:40.9299,lng:-8.2451},
+  {name:"Cortegaça",lat:40.9142,lng:-8.7289},
+  {name:"Cesar",lat:40.8653,lng:-8.4445},
+];
+function WeatherW() {
+  const [weather,setWeather] = useState(null);
+  const [locIdx,setLocIdx] = useState(() => {try{return parseInt(localStorage.getItem('go-weather-loc'))||0;}catch(e){return 0;}});
+  const [showLoc,setShowLoc] = useState(false);
+  const loc = WEATHER_LOCATIONS[locIdx]||WEATHER_LOCATIONS[0];
+  useEffect(() => {
+    setWeather(null);
+    fetch("https://api.open-meteo.com/v1/forecast?latitude="+loc.lat+"&longitude="+loc.lng+"&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode&timezone=Europe/Lisbon&forecast_days=7")
+      .then(r => r.json()).then(d => setWeather(d.daily)).catch(() => {});
+  },[locIdx]);
+  const changeLoc = (i) => {setLocIdx(i);try{localStorage.setItem('go-weather-loc',i);}catch(e){}setShowLoc(false);};
+  if (!weather) return (<WBox><WTitle icon="🌤️" text="Meteorologia"/><div style={{color:"#64748b",fontSize:11,textAlign:"center",padding:8}}>A carregar...</div></WBox>);
   return (
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-      <div style={{fontSize:12,fontWeight:700,color:"#fff",display:"flex",alignItems:"center",gap:6}}>{icon} {text}</div>
-      {right}
-    </div>
+    <WBox>
+      <WTitle icon="🌤️" text={"Meteorologia — "+loc.name} right={<button onClick={()=>setShowLoc(!showLoc)} style={{background:"none",border:"1px solid #475569",borderRadius:4,color:"#94a3b8",cursor:"pointer",fontSize:10,padding:"2px 8px"}}>📍</button>}/>
+      {showLoc&&(<div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:8}}>{WEATHER_LOCATIONS.map((l,i)=>(<button key={i} onClick={()=>changeLoc(i)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid "+(i===locIdx?"#f59e0b":"#475569"),background:i===locIdx?"#f59e0b20":"transparent",color:i===locIdx?"#f59e0b":"#94a3b8",fontSize:10,fontWeight:i===locIdx?600:400,cursor:"pointer"}}>{l.name}</button>))}</div>)}
+      <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4}}>
+        {weather.time.map((t,i) => {
+          const d = new Date(t); const isToday = i===0;
+          const dayName = isToday ? "Hoje" : i===1 ? "Amanhã" : WDSHORT[d.getDay()];
+          const icon = WC[weather.weathercode[i]] || "🌤️";
+          const rain = weather.precipitation_sum[i];
+          return (
+            <div key={i} style={{minWidth:72,textAlign:"center",padding:"8px 6px",borderRadius:8,background:isToday?"#f59e0b15":"#0f172a",border:isToday?"1px solid #f59e0b30":"1px solid transparent"}}>
+              <div style={{fontSize:10,fontWeight:isToday?700:500,color:isToday?"#f59e0b":"#94a3b8",marginBottom:4}}>{dayName}</div>
+              <div style={{fontSize:22,marginBottom:4}}>{icon}</div>
+              <div style={{fontSize:12,fontWeight:700,color:"#fff"}}>{Math.round(weather.temperature_2m_max[i])}°</div>
+              <div style={{fontSize:10,color:"#64748b"}}>{Math.round(weather.temperature_2m_min[i])}°</div>
+              {rain > 0 && <div style={{fontSize:9,color:"#3b82f6",marginTop:2}}>💧{rain}mm</div>}
+            </div>
+          );
+        })}
+      </div>
+    </WBox>
+  );
+}
+
+/* ── All Obras Map ── */
+function AllObrasMap({obras,onSelect}) {
+  const mapRef = useRef(null);
+  const mapInstance = useRef(null);
+  const obrasWithCoords = obras.filter(o => !o.arquivada && o.latitude && o.longitude && !isNaN(parseFloat(o.latitude)));
+
+  useEffect(() => {
+    if (!mapRef.current || obrasWithCoords.length === 0) return;
+    if (mapInstance.current) { mapInstance.current.remove(); mapInstance.current = null; }
+    const map = L.map(mapRef.current).setView([40.84,-8.48],11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM',maxZoom:18}).addTo(map);
+    const bounds = [];
+    obrasWithCoords.forEach(o => {
+      const lat = parseFloat(o.latitude), lng = parseFloat(o.longitude);
+      const m = TM[o.tipo];
+      const marker = L.circleMarker([lat,lng],{radius:8,fillColor:m.accent,color:"#fff",weight:2,fillOpacity:.8}).addTo(map);
+      marker.bindPopup("<b>"+o.tipo+" — "+(o.numero||"—")+"</b><br/>"+(o.designacao||"")+"<br/>📍 "+(o.concelho||""));
+      marker.on('click',() => { if (onSelect) onSelect(o); });
+      bounds.push([lat,lng]);
+    });
+    if (bounds.length > 0) map.fitBounds(bounds,{padding:[30,30]});
+    mapInstance.current = map;
+    return () => { if (mapInstance.current) { mapInstance.current.remove(); mapInstance.current = null; } };
+  },[obrasWithCoords.length]);
+
+  if (obrasWithCoords.length === 0) {
+    return (<WBox><WTitle icon="🗺️" text="Mapa de Obras"/><div style={{color:"#64748b",fontSize:11,textAlign:"center",padding:12}}>Sem obras com coordenadas</div></WBox>);
+  }
+  return (
+    <WBox>
+      <WTitle icon="🗺️" text={"Mapa de Obras ("+obrasWithCoords.length+")"}/>
+      <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+        {TIPOS.map(t => {const c=obrasWithCoords.filter(o=>o.tipo===t).length;return c>0 && (<div key={t} style={{display:"flex",alignItems:"center",gap:4,fontSize:10,color:"#94a3b8"}}><span style={{width:8,height:8,borderRadius:4,background:TM[t].accent}}/>{t}: {c}</div>);})}
+      </div>
+      <div ref={mapRef} style={{height:250,borderRadius:10}}/>
+    </WBox>
   );
 }
 
 /* ── Alerts ── */
 function getAlerts(obras) {
-  const al = [];
-  obras.filter(o => !o.arquivada&&!o.concluida).forEach(o => {
-    const lim = o.alertaDias||10;
-    const h = o.historicoEstados||[];
-    const d2 = h.length>0 ? h[h.length-1].data : o.dataCriacao;
-    const de = daysAgo(d2);
-    if (d2 && de>=lim) al.push({tipo:"estado",obra:o,dias:de,msg:"Sem mudança há "+de+"d"});
-    if (o.corteMarcado && o.dataCorte) {
-      const dd = daysBetween(new Date().toISOString(),o.dataCorte);
-      if (dd>=0 && dd<=3) al.push({tipo:"corte",obra:o,dias:dd,msg:dd===0?"Corte HOJE!":"Corte em "+dd+"d"});
-    }
-    if (o.problemasMateriais) al.push({tipo:"mat",obra:o,dias:0,msg:"Problema materiais"});
+  const al=[];
+  obras.filter(o=>!o.arquivada&&!o.concluida).forEach(o=>{
+    const lim=o.alertaDias||10;const h=o.historicoEstados||[];const d2=h.length>0?h[h.length-1].data:o.dataCriacao;const de=daysAgo(d2);
+    if(d2&&de>=lim) al.push({tipo:"estado",obra:o,dias:de,msg:"Sem mudança há "+de+"d"});
+    if(o.corteMarcado&&o.dataCorte){const dd=daysBetween(new Date().toISOString(),o.dataCorte);if(dd>=0&&dd<=3) al.push({tipo:"corte",obra:o,dias:dd,msg:dd===0?"Corte HOJE!":"Corte em "+dd+"d"});}
+    if(o.problemasMateriais) al.push({tipo:"mat",obra:o,dias:0,msg:"Problema materiais"});
   });
-  al.sort((a,b) => a.tipo==="corte"?-1:b.tipo==="corte"?1:b.dias-a.dias);
-  return al;
+  al.sort((a,b)=>a.tipo==="corte"?-1:b.tipo==="corte"?1:b.dias-a.dias);return al;
 }
-const aI = {estado:"🔴",consulta:"🟡",corte:"🟠",mat:"⚠️"};
-const aC2 = {estado:"#dc2626",consulta:"#d97706",corte:"#ea580c",mat:"#dc2626"};
+const aI={estado:"🔴",corte:"🟠",mat:"⚠️"};const aC2={estado:"#dc2626",corte:"#ea580c",mat:"#dc2626"};
 
 /* ── Activity Feed ── */
 function getActivity(obras) {
-  const acts = [];
-  obras.filter(o => !o.arquivada).forEach(o => {
-    (o.historicoEstados||[]).forEach(h => acts.push({date:h.data,icon:"🔄",text:(o.numero||"—")+" → "+h.estado,tipo:o.tipo}));
-    (o.tarefas||[]).filter(t => t.concluida&&t.dataConclusao).forEach(t => acts.push({date:t.dataConclusao,icon:"✅",text:(o.numero||"—")+" — "+t.texto,tipo:o.tipo}));
-    (o.notas||[]).forEach(n => acts.push({date:n.data,icon:"📝",text:(o.numero||"—")+" — nota",tipo:o.tipo}));
+  const acts=[];
+  obras.filter(o=>!o.arquivada).forEach(o=>{
+    (o.historicoEstados||[]).forEach(h=>acts.push({date:h.data,icon:"🔄",text:(o.numero||"—")+" → "+h.estado,tipo:o.tipo}));
+    (o.tarefas||[]).filter(t=>t.concluida&&t.dataConclusao).forEach(t=>acts.push({date:t.dataConclusao,icon:"✅",text:(o.numero||"—")+" — "+t.texto,tipo:o.tipo}));
+    (o.visitas||[]).forEach(v=>acts.push({date:v.data,icon:"👷",text:(o.numero||"—")+" — visita: "+v.notas.slice(0,40),tipo:o.tipo}));
   });
-  acts.sort((a,b) => new Date(b.date)-new Date(a.date));
-  return acts.slice(0,8);
+  acts.sort((a,b)=>new Date(b.date)-new Date(a.date));return acts.slice(0,10);
 }
 
-/* ── Calendar Widget ── */
+/* ── Calendar ── */
 function CalendarW({events,onAdd,onRemove}) {
-  const [vw,setVw] = useState(new Date());
-  const [sel,setSel] = useState(null);
-  const [nT,setNT] = useState("");
-  const [nH,setNH] = useState("");
-  const y = vw.getFullYear(), mo = vw.getMonth();
-  const sd = (new Date(y,mo,1).getDay()+6)%7;
-  const dim = new Date(y,mo+1,0).getDate();
-  const td = toKey(new Date());
-  const cells = [];
-  for (let i=0;i<sd;i++) cells.push(null);
-  for (let d=1;d<=dim;d++) cells.push(d);
-  const evD = (d) => {
-    if (!d) return [];
-    const k = y+"-"+String(mo+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
-    return (events||[]).filter(e => e.data===k).sort((a,b) => (a.hora||"").localeCompare(b.hora||""));
-  };
-  const sk = sel ? y+"-"+String(mo+1).padStart(2,"0")+"-"+String(sel).padStart(2,"0") : null;
-  const doAdd = () => {
-    if (!nT.trim()||!sk) return;
-    onAdd({id:uid(),data:sk,texto:nT.trim(),hora:nH||""});
-    setNT("");setNH("");
-  };
+  const [vw,setVw]=useState(new Date());const [sel,setSel]=useState(null);const [nT,setNT]=useState("");const [nH,setNH]=useState("");
+  const y=vw.getFullYear(),mo=vw.getMonth(),sd=(new Date(y,mo,1).getDay()+6)%7,dim=new Date(y,mo+1,0).getDate(),td=toKey(new Date());
+  const cells=[];for(let i=0;i<sd;i++)cells.push(null);for(let d=1;d<=dim;d++)cells.push(d);
+  const evD=(d)=>{if(!d)return[];const k=y+"-"+String(mo+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");return(events||[]).filter(e=>e.data===k).sort((a,b)=>(a.hora||"").localeCompare(b.hora||""));};
+  const sk=sel?y+"-"+String(mo+1).padStart(2,"0")+"-"+String(sel).padStart(2,"0"):null;
+  const doAdd=()=>{if(!nT.trim()||!sk)return;onAdd({id:uid(),data:sk,texto:nT.trim(),hora:nH||""});setNT("");setNH("");};
   return (
     <WBox>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
@@ -225,186 +224,92 @@ function CalendarW({events,onAdd,onRemove}) {
         <div style={{fontSize:13,fontWeight:700,color:"#fff"}}>{MP[mo]} {y}</div>
         <button onClick={()=>{setVw(new Date(y,mo+1,1));setSel(null);}} style={{background:"none",border:"none",color:"#94a3b8",fontSize:16,cursor:"pointer"}}>›</button>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:2}}>
-        {DP2.map(d => <div key={d} style={{textAlign:"center",fontSize:9,color:"#64748b",fontWeight:600}}>{d}</div>)}
-      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:2}}>{DP2.map(d=><div key={d} style={{textAlign:"center",fontSize:9,color:"#64748b",fontWeight:600}}>{d}</div>)}</div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
-        {cells.map((d,i) => {
-          if (!d) return <div key={i}/>;
-          const k = y+"-"+String(mo+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
-          const isT = k===td, isS = d===sel, has = evD(d).length>0;
-          return (
-            <div key={i} onClick={()=>setSel(d===sel?null:d)} style={{textAlign:"center",padding:"5px 0",borderRadius:5,cursor:"pointer",background:isS?"#f59e0b":isT?"#334155":"transparent",color:isS?"#0f172a":isT?"#f59e0b":"#e2e8f0",fontWeight:isT||isS?700:400,fontSize:11}}>
-              {d}{has && <div style={{width:4,height:4,borderRadius:2,background:isS?"#0f172a":"#f59e0b",margin:"1px auto 0"}}/>}
-            </div>
-          );
+        {cells.map((d,i)=>{if(!d)return <div key={i}/>;const k=y+"-"+String(mo+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");const isT=k===td,isS=d===sel,has=evD(d).length>0;
+          return (<div key={i} onClick={()=>setSel(d===sel?null:d)} style={{textAlign:"center",padding:"5px 0",borderRadius:5,cursor:"pointer",background:isS?"#f59e0b":isT?"#334155":"transparent",color:isS?"#0f172a":isT?"#f59e0b":"#e2e8f0",fontWeight:isT||isS?700:400,fontSize:11}}>{d}{has&&<div style={{width:4,height:4,borderRadius:2,background:isS?"#0f172a":"#f59e0b",margin:"1px auto 0"}}/>}</div>);
         })}
       </div>
-      {sel && (
-        <div style={{marginTop:8,borderTop:"1px solid #334155",paddingTop:6}}>
-          <div style={{fontSize:11,fontWeight:600,color:"#f59e0b",marginBottom:4}}>{sel} {MP[mo]}</div>
-          {evD(sel).map(e => (
-            <div key={e.id} style={{display:"flex",alignItems:"center",gap:6,padding:"3px 0",borderBottom:"1px solid #334155"}}>
-              {e.hora && <span style={{fontSize:10,color:"#f59e0b",fontFamily:"monospace",minWidth:36}}>{e.hora}</span>}
-              <span style={{fontSize:11,color:"#e2e8f0",flex:1}}>{e.texto}</span>
-              <button onClick={()=>onRemove(e.id)} style={{background:"#dc262620",border:"1px solid #dc262640",borderRadius:4,color:"#f87171",cursor:"pointer",fontSize:11,padding:"2px 8px",fontWeight:600}}>✕</button>
-            </div>
-          ))}
-          {evD(sel).length===0 && <div style={{fontSize:10,color:"#64748b",padding:"2px 0"}}>Sem eventos</div>}
-          <div style={{display:"flex",gap:4,marginTop:6}}>
-            <input style={{width:50,padding:"4px 5px",borderRadius:4,border:"1px solid #475569",background:"#0f172a",color:"#e2e8f0",fontSize:10,outline:"none"}} type="time" value={nH} onChange={e=>setNH(e.target.value)}/>
-            <input style={{flex:1,padding:"4px 7px",borderRadius:4,border:"1px solid #475569",background:"#0f172a",color:"#e2e8f0",fontSize:10,outline:"none"}} placeholder="Novo evento..." value={nT} onChange={e=>setNT(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")doAdd();}}/>
-            <button onClick={doAdd} style={{padding:"3px 8px",borderRadius:4,border:"none",background:"#f59e0b",color:"#0f172a",fontWeight:700,fontSize:11,cursor:"pointer"}}>+</button>
-          </div>
-        </div>
-      )}
+      {sel&&(<div style={{marginTop:8,borderTop:"1px solid #334155",paddingTop:6}}>
+        <div style={{fontSize:11,fontWeight:600,color:"#f59e0b",marginBottom:4}}>{sel} {MP[mo]}</div>
+        {evD(sel).map(e=>(<div key={e.id} style={{display:"flex",alignItems:"center",gap:6,padding:"3px 0",borderBottom:"1px solid #334155"}}>{e.hora&&<span style={{fontSize:10,color:"#f59e0b",fontFamily:"monospace",minWidth:36}}>{e.hora}</span>}<span style={{fontSize:11,color:"#e2e8f0",flex:1}}>{e.texto}</span><button onClick={()=>onRemove(e.id)} style={{background:"#dc262620",border:"1px solid #dc262640",borderRadius:4,color:"#f87171",cursor:"pointer",fontSize:11,padding:"2px 8px",fontWeight:600}}>✕</button></div>))}
+        {evD(sel).length===0&&<div style={{fontSize:10,color:"#64748b",padding:"2px 0"}}>Sem eventos</div>}
+        <div style={{display:"flex",gap:4,marginTop:6}}><input style={{width:50,padding:"4px 5px",borderRadius:4,border:"1px solid #475569",background:"#0f172a",color:"#e2e8f0",fontSize:10,outline:"none"}} type="time" value={nH} onChange={e=>setNH(e.target.value)}/><input style={{flex:1,padding:"4px 7px",borderRadius:4,border:"1px solid #475569",background:"#0f172a",color:"#e2e8f0",fontSize:10,outline:"none"}} placeholder="Novo evento..." value={nT} onChange={e=>setNT(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")doAdd();}}/><button onClick={doAdd} style={{padding:"3px 8px",borderRadius:4,border:"none",background:"#f59e0b",color:"#0f172a",fontWeight:700,fontSize:11,cursor:"pointer"}}>+</button></div>
+      </div>)}
     </WBox>
   );
 }
 
-/* ── Todo Widget ── */
+/* ── Todo ── */
 function TodoW({todos,onAdd,onToggle,onRemove}) {
-  const [n,setN] = useState("");
-  const doAdd = () => {if(!n.trim()) return;onAdd({id:uid(),texto:n.trim(),concluida:false,data:new Date().toISOString()});setN("");};
-  const p = (todos||[]).filter(t => !t.concluida);
-  const d = (todos||[]).filter(t => t.concluida);
+  const [n,setN]=useState("");const doAdd=()=>{if(!n.trim())return;onAdd({id:uid(),texto:n.trim(),concluida:false,data:new Date().toISOString()});setN("");};
+  const p=(todos||[]).filter(t=>!t.concluida),d=(todos||[]).filter(t=>t.concluida);
   return (
-    <WBox>
-      <WTitle icon="📌" text={"Tarefas Gerais ("+p.length+")"}/>
-      <div style={{display:"flex",gap:4,marginBottom:8}}>
-        <input style={{flex:1,padding:"6px 8px",borderRadius:5,border:"1px solid #475569",background:"#0f172a",color:"#e2e8f0",fontSize:11,outline:"none"}} placeholder="Nova tarefa..." value={n} onChange={e=>setN(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")doAdd();}}/>
-        <button onClick={doAdd} style={{padding:"0 10px",borderRadius:5,border:"none",background:"#f59e0b",color:"#0f172a",fontWeight:700,fontSize:12,cursor:"pointer"}}>+</button>
-      </div>
-      <div style={{maxHeight:180,overflowY:"auto"}}>
-        {p.map(t => (
-          <div key={t.id} style={{display:"flex",alignItems:"center",gap:3,borderBottom:"1px solid #293548",padding:"1px 0"}}>
-            <div style={{flex:1,display:"flex",alignItems:"center",gap:8,cursor:"pointer",padding:"3px 0"}} onClick={()=>onToggle(t.id)}>
-              <div style={{width:34,height:19,borderRadius:10,background:"#475569",position:"relative",flexShrink:0}}><div style={{width:15,height:15,borderRadius:8,background:"#fff",position:"absolute",top:2,left:2}}/></div>
-              <span style={{fontSize:11,color:"#e2e8f0"}}>{t.texto}</span>
-            </div>
-            <button onClick={()=>onRemove(t.id)} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:10,opacity:.4}}>✕</button>
-          </div>
-        ))}
-        {d.length>0 && (
-          <div>
-            <div style={{fontSize:9,color:"#64748b",fontWeight:600,marginTop:6,marginBottom:2}}>FEITAS ({d.length})</div>
-            {d.map(t => (
-              <div key={t.id} style={{display:"flex",alignItems:"center",gap:3,borderBottom:"1px solid #293548",opacity:.45,padding:"1px 0"}}>
-                <div style={{flex:1,display:"flex",alignItems:"center",gap:8,cursor:"pointer",padding:"3px 0"}} onClick={()=>onToggle(t.id)}>
-                  <div style={{width:34,height:19,borderRadius:10,background:"#16a34a",position:"relative",flexShrink:0}}><div style={{width:15,height:15,borderRadius:8,background:"#fff",position:"absolute",top:2,left:17}}/></div>
-                  <span style={{fontSize:11,color:"#94a3b8",textDecoration:"line-through"}}>{t.texto}</span>
-                </div>
-                <button onClick={()=>onRemove(t.id)} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:10,opacity:.3}}>✕</button>
-              </div>
-            ))}
-          </div>
-        )}
+    <WBox><WTitle icon="📌" text={"Tarefas ("+p.length+")"}/>
+      <div style={{display:"flex",gap:4,marginBottom:8}}><input style={{flex:1,padding:"6px 8px",borderRadius:5,border:"1px solid #475569",background:"#0f172a",color:"#e2e8f0",fontSize:11,outline:"none"}} placeholder="Nova tarefa..." value={n} onChange={e=>setN(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")doAdd();}}/><button onClick={doAdd} style={{padding:"0 10px",borderRadius:5,border:"none",background:"#f59e0b",color:"#0f172a",fontWeight:700,fontSize:12,cursor:"pointer"}}>+</button></div>
+      <div style={{maxHeight:160,overflowY:"auto"}}>
+        {p.map(t=>(<div key={t.id} style={{display:"flex",alignItems:"center",gap:3,borderBottom:"1px solid #293548",padding:"1px 0"}}><div style={{flex:1,display:"flex",alignItems:"center",gap:8,cursor:"pointer",padding:"3px 0"}} onClick={()=>onToggle(t.id)}><div style={{width:34,height:19,borderRadius:10,background:"#475569",position:"relative",flexShrink:0}}><div style={{width:15,height:15,borderRadius:8,background:"#fff",position:"absolute",top:2,left:2}}/></div><span style={{fontSize:11,color:"#e2e8f0"}}>{t.texto}</span></div><button onClick={()=>onRemove(t.id)} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:10,opacity:.4}}>✕</button></div>))}
+        {d.length>0&&(<div><div style={{fontSize:9,color:"#64748b",fontWeight:600,marginTop:6,marginBottom:2}}>FEITAS ({d.length})</div>{d.slice(0,5).map(t=>(<div key={t.id} style={{display:"flex",alignItems:"center",gap:3,borderBottom:"1px solid #293548",opacity:.45,padding:"1px 0"}}><div style={{flex:1,display:"flex",alignItems:"center",gap:8,cursor:"pointer",padding:"3px 0"}} onClick={()=>onToggle(t.id)}><div style={{width:34,height:19,borderRadius:10,background:"#16a34a",position:"relative",flexShrink:0}}><div style={{width:15,height:15,borderRadius:8,background:"#fff",position:"absolute",top:2,left:17}}/></div><span style={{fontSize:11,color:"#94a3b8",textDecoration:"line-through"}}>{t.texto}</span></div><button onClick={()=>onRemove(t.id)} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:10,opacity:.3}}>✕</button></div>))}</div>)}
       </div>
     </WBox>
   );
 }
 
-/* ── Contacts Widget ── */
+/* ── Contacts ── */
 function ContactsW({contacts,onAdd,onRemove}) {
-  const [show,setShow] = useState(false);
-  const [f,setF] = useState({nome:"",telemovel:"",numEmpresa:"",numColab:"",categoria:"Colega"});
-  const [search,setSearch] = useState("");
-  const [cf,setCf] = useState("Todos");
-  const doAdd = () => {if(!f.nome.trim()) return;onAdd({...f,id:uid()});setF({nome:"",telemovel:"",numEmpresa:"",numColab:"",categoria:"Colega"});setShow(false);};
-  const fl = (contacts||[]).filter(c => {
-    if (cf!=="Todos"&&c.categoria!==cf) return false;
-    if (search) {const s=search.toLowerCase();return [c.nome,c.telemovel,c.numEmpresa,c.numColab].some(v=>(v||"").toLowerCase().includes(s));}
-    return true;
-  });
-  const inp = {width:"100%",padding:"5px 7px",borderRadius:4,border:"1px solid #475569",background:"#0f172a",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"};
+  const [show,setShow]=useState(false);const [f,setF]=useState({nome:"",telemovel:"",numEmpresa:"",numColab:"",categoria:"Colega"});const [search,setSearch]=useState("");const [cf,setCf]=useState("Todos");
+  const doAdd=()=>{if(!f.nome.trim())return;onAdd({...f,id:uid()});setF({nome:"",telemovel:"",numEmpresa:"",numColab:"",categoria:"Colega"});setShow(false);};
+  const fl=(contacts||[]).filter(c=>{if(cf!=="Todos"&&c.categoria!==cf)return false;if(search){const s=search.toLowerCase();return [c.nome,c.telemovel,c.numEmpresa,c.numColab].some(v=>(v||"").toLowerCase().includes(s));}return true;});
+  const inp={width:"100%",padding:"5px 7px",borderRadius:4,border:"1px solid #475569",background:"#0f172a",color:"#e2e8f0",fontSize:11,outline:"none",boxSizing:"border-box"};
   return (
-    <WBox>
-      <WTitle icon="📞" text="Contactos" right={<button onClick={()=>setShow(!show)} style={{padding:"3px 10px",borderRadius:4,border:"none",background:show?"#475569":"#f59e0b",color:show?"#fff":"#0f172a",fontWeight:700,fontSize:11,cursor:"pointer"}}>{show?"×":"+"}</button>}/>
-      <div style={{display:"flex",gap:4,marginBottom:6}}>
-        <input style={{...inp,flex:1}} placeholder="Pesquisar..." value={search} onChange={e=>setSearch(e.target.value)}/>
-        <select value={cf} onChange={e=>setCf(e.target.value)} style={{...inp,width:"auto",padding:"4px 6px"}}>
-          <option value="Todos">Todos</option>
-          {CC.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-      </div>
-      {show && (
-        <div style={{background:"#0f172a",borderRadius:6,padding:10,marginBottom:8,border:"1px solid #475569"}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-            <div><div style={{fontSize:9,color:"#64748b",marginBottom:2}}>NOME</div><input style={inp} value={f.nome} onChange={e=>setF({...f,nome:e.target.value})}/></div>
-            <div><div style={{fontSize:9,color:"#64748b",marginBottom:2}}>CATEGORIA</div><select value={f.categoria} onChange={e=>setF({...f,categoria:e.target.value})} style={inp}>{CC.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-            <div><div style={{fontSize:9,color:"#64748b",marginBottom:2}}>TELEMÓVEL</div><input style={inp} value={f.telemovel} onChange={e=>setF({...f,telemovel:e.target.value})}/></div>
-            <div><div style={{fontSize:9,color:"#64748b",marginBottom:2}}>Nº EMPRESA</div><input style={inp} value={f.numEmpresa} onChange={e=>setF({...f,numEmpresa:e.target.value})}/></div>
-            <div><div style={{fontSize:9,color:"#64748b",marginBottom:2}}>Nº COLABORADOR</div><input style={inp} value={f.numColab} onChange={e=>setF({...f,numColab:e.target.value})}/></div>
-          </div>
-          <button onClick={doAdd} style={{marginTop:8,padding:"5px 0",borderRadius:4,border:"none",background:"#f59e0b",color:"#0f172a",fontWeight:700,fontSize:11,cursor:"pointer",width:"100%"}}>Adicionar</button>
-        </div>
-      )}
-      <div style={{maxHeight:200,overflowY:"auto"}}>
-        {fl.map(c => (
-          <div key={c.id} style={{display:"flex",gap:8,padding:"5px 0",borderBottom:"1px solid #293548",alignItems:"center"}}>
-            <div style={{width:26,height:26,borderRadius:13,background:c.categoria==="Colega"?"#3b82f620":c.categoria==="PSE"?"#16a34a20":"#d9770620",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,flexShrink:0}}>
-              {c.categoria==="Colega"?"👤":c.categoria==="PSE"?"🔧":"🏛️"}
-            </div>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:11,fontWeight:600,color:"#fff"}}>{c.nome} <span style={{fontSize:9,color:"#64748b",fontWeight:400}}>{c.categoria}</span></div>
-              <div style={{display:"flex",gap:8,fontSize:10,color:"#94a3b8",flexWrap:"wrap"}}>
-                {c.telemovel && <span>📱{c.telemovel}</span>}
-                {c.numEmpresa && <span>☎{c.numEmpresa}</span>}
-                {c.numColab && <span>🪪{c.numColab}</span>}
-              </div>
-            </div>
-            <button onClick={()=>onRemove(c.id)} style={{background:"#dc262615",border:"1px solid #dc262630",borderRadius:4,color:"#f87171",cursor:"pointer",fontSize:10,padding:"2px 6px"}}>✕</button>
-          </div>
-        ))}
-        {fl.length===0 && <div style={{color:"#64748b",fontSize:10,textAlign:"center",padding:8}}>Sem contactos</div>}
-      </div>
+    <WBox><WTitle icon="📞" text="Contactos" right={<button onClick={()=>setShow(!show)} style={{padding:"3px 10px",borderRadius:4,border:"none",background:show?"#475569":"#f59e0b",color:show?"#fff":"#0f172a",fontWeight:700,fontSize:11,cursor:"pointer"}}>{show?"×":"+"}</button>}/>
+      <div style={{display:"flex",gap:4,marginBottom:6}}><input style={{...inp,flex:1}} placeholder="Pesquisar..." value={search} onChange={e=>setSearch(e.target.value)}/><select value={cf} onChange={e=>setCf(e.target.value)} style={{...inp,width:"auto",padding:"4px 6px"}}><option value="Todos">Todos</option>{CC.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+      {show&&(<div style={{background:"#0f172a",borderRadius:6,padding:10,marginBottom:8,border:"1px solid #475569"}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}><div><div style={{fontSize:9,color:"#64748b",marginBottom:2}}>NOME</div><input style={inp} value={f.nome} onChange={e=>setF({...f,nome:e.target.value})}/></div><div><div style={{fontSize:9,color:"#64748b",marginBottom:2}}>CATEGORIA</div><select value={f.categoria} onChange={e=>setF({...f,categoria:e.target.value})} style={inp}>{CC.map(c=><option key={c} value={c}>{c}</option>)}</select></div><div><div style={{fontSize:9,color:"#64748b",marginBottom:2}}>TELEMÓVEL</div><input style={inp} value={f.telemovel} onChange={e=>setF({...f,telemovel:e.target.value})}/></div><div><div style={{fontSize:9,color:"#64748b",marginBottom:2}}>Nº EMPRESA</div><input style={inp} value={f.numEmpresa} onChange={e=>setF({...f,numEmpresa:e.target.value})}/></div><div><div style={{fontSize:9,color:"#64748b",marginBottom:2}}>Nº COLABORADOR</div><input style={inp} value={f.numColab} onChange={e=>setF({...f,numColab:e.target.value})}/></div></div><button onClick={doAdd} style={{marginTop:8,padding:"5px 0",borderRadius:4,border:"none",background:"#f59e0b",color:"#0f172a",fontWeight:700,fontSize:11,cursor:"pointer",width:"100%"}}>Adicionar</button></div>)}
+      <div style={{maxHeight:180,overflowY:"auto"}}>{fl.map(c=>(<div key={c.id} style={{display:"flex",gap:8,padding:"5px 0",borderBottom:"1px solid #293548",alignItems:"center"}}><div style={{width:26,height:26,borderRadius:13,background:c.categoria==="Colega"?"#3b82f620":c.categoria==="PSE"?"#16a34a20":"#d9770620",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,flexShrink:0}}>{c.categoria==="Colega"?"👤":c.categoria==="PSE"?"🔧":"🏛️"}</div><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:600,color:"#fff"}}>{c.nome} <span style={{fontSize:9,color:"#64748b",fontWeight:400}}>{c.categoria}</span></div><div style={{display:"flex",gap:8,fontSize:10,color:"#94a3b8",flexWrap:"wrap"}}>{c.telemovel&&<span>📱{c.telemovel}</span>}{c.numEmpresa&&<span>☎{c.numEmpresa}</span>}{c.numColab&&<span>🪪{c.numColab}</span>}</div></div><button onClick={()=>onRemove(c.id)} style={{background:"#dc262615",border:"1px solid #dc262630",borderRadius:4,color:"#f87171",cursor:"pointer",fontSize:10,padding:"2px 6px"}}>✕</button></div>))}{fl.length===0&&<div style={{color:"#64748b",fontSize:10,textAlign:"center",padding:8}}>Sem contactos</div>}</div>
     </WBox>
   );
 }
 
-/* ── LANDING PAGE ── */
+/* ── LANDING ── */
 function Landing({obras,onType,onNew,onSelObra,events,onAddEv,onRemEv,todos,onAddTd,onTogTd,onRemTd,contacts,onAddCt,onRemCt}) {
-  const a = obras.filter(o => !o.arquivada);
-  const active = a.filter(o => !o.concluida);
-  const done = a.filter(o => o.concluida);
-  const alerts = useMemo(() => getAlerts(obras),[obras]);
-  const activity = useMemo(() => getActivity(obras),[obras]);
-  const totalTarefas = active.reduce((s,o) => s+(o.tarefas||[]).filter(t=>!t.concluida).length,0);
-  const next7 = useMemo(() => {
-    const res = [];const now = new Date();now.setHours(0,0,0,0);
-    for (let i=0;i<7;i++) {const d = new Date(now);d.setDate(d.getDate()+i);const key = toKey(d);const dn = i===0?"Hoje":i===1?"Amanhã":WD[d.getDay()];const de = (events||[]).filter(e=>e.data===key).sort((x,y)=>(x.hora||"").localeCompare(y.hora||""));const co = active.filter(o=>o.corteMarcado&&o.dataCorte===key);if(de.length>0||co.length>0) res.push({day:dn,date:fmtD(key),events:de,cortes:co});}
-    return res;
-  },[events,active]);
-  const today = new Date();
-  const dateStr = today.getDate()+" de "+MP[today.getMonth()]+" de "+today.getFullYear();
+  const a=obras.filter(o=>!o.arquivada);const active=a.filter(o=>!o.concluida);const done=a.filter(o=>o.concluida);
+  const alerts=useMemo(()=>getAlerts(obras),[obras]);const activity=useMemo(()=>getActivity(obras),[obras]);
+  const totalTarefas=active.reduce((s,o)=>s+(o.tarefas||[]).filter(t=>!t.concluida).length,0);
+  const next7=useMemo(()=>{const res=[];const now=new Date();now.setHours(0,0,0,0);for(let i=0;i<7;i++){const d=new Date(now);d.setDate(d.getDate()+i);const key=toKey(d);const dn=i===0?"Hoje":i===1?"Amanhã":WD[d.getDay()];const de=(events||[]).filter(e=>e.data===key).sort((x,y)=>(x.hora||"").localeCompare(y.hora||""));const co=active.filter(o=>o.corteMarcado&&o.dataCorte===key);if(de.length>0||co.length>0)res.push({day:dn,date:fmtD(key),events:de,cortes:co});}return res;},[events,active]);
+  const today=new Date();const dateStr=today.getDate()+" de "+MP[today.getMonth()]+" de "+today.getFullYear();
+
   return (
     <div style={{minHeight:"100vh",background:"#0f172a"}}>
-      <div style={{padding:"28px 24px 16px",background:"linear-gradient(180deg,#1e293b 0%,#0f172a 100%)"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <div><h1 style={{fontSize:24,fontWeight:800,color:"#fff",margin:0,letterSpacing:-.8}}>Gestor<span style={{color:"#f59e0b"}}>Obras</span></h1><div style={{fontSize:11,color:"#64748b",marginTop:2}}>{dateStr}</div></div>
-          <div style={{fontSize:9,color:"#475569",background:"#1e293b",padding:"4px 10px",borderRadius:6,border:"1px solid #334155",fontWeight:600,letterSpacing:1}}>E-REDES · OAZ</div>
-        </div>
-      </div>
+      <div style={{padding:"28px 24px 16px",background:"linear-gradient(180deg,#1e293b 0%,#0f172a 100%)"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><div><h1 style={{fontSize:24,fontWeight:800,color:"#fff",margin:0,letterSpacing:-.8}}>Gestor<span style={{color:"#f59e0b"}}>Obras</span></h1><div style={{fontSize:11,color:"#64748b",marginTop:2}}>{dateStr}</div></div><div style={{fontSize:9,color:"#475569",background:"#1e293b",padding:"4px 10px",borderRadius:6,border:"1px solid #334155",fontWeight:600,letterSpacing:1}}>E-REDES · OAZ</div></div></div>
       <div style={{padding:"0 20px 28px",maxWidth:820,margin:"0 auto"}}>
+        {/* KPIs */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
-          {[{n:active.length,l:"Obras Ativas",icon:"📂",color:"#3b82f6"},{n:done.length,l:"Concluídas",icon:"✅",color:"#16a34a"},{n:alerts.length,l:"Alertas",icon:"🔔",color:alerts.length>0?"#dc2626":"#64748b"},{n:totalTarefas,l:"Tarefas Pend.",icon:"📋",color:totalTarefas>0?"#f59e0b":"#64748b"}].map((k,i) => (
-            <div key={i} style={{background:"#1e293b",borderRadius:10,padding:"14px 12px",border:"1px solid #334155",textAlign:"center"}}>
-              <div style={{fontSize:18,marginBottom:4}}>{k.icon}</div>
-              <div style={{fontSize:24,fontWeight:800,color:k.color}}>{k.n}</div>
-              <div style={{fontSize:10,color:"#64748b",fontWeight:500,marginTop:2}}>{k.l}</div>
-            </div>
-          ))}
+          {[{n:active.length,l:"Ativas",icon:"📂",color:"#3b82f6"},{n:done.length,l:"Concluídas",icon:"✅",color:"#16a34a"},{n:alerts.length,l:"Alertas",icon:"🔔",color:alerts.length>0?"#dc2626":"#64748b"},{n:totalTarefas,l:"Tarefas",icon:"📋",color:totalTarefas>0?"#f59e0b":"#64748b"}].map((k,i)=>(<div key={i} style={{background:"#1e293b",borderRadius:10,padding:"14px 12px",border:"1px solid #334155",textAlign:"center"}}><div style={{fontSize:18,marginBottom:4}}>{k.icon}</div><div style={{fontSize:24,fontWeight:800,color:k.color}}>{k.n}</div><div style={{fontSize:10,color:"#64748b",fontWeight:500,marginTop:2}}>{k.l}</div></div>))}
         </div>
+
+        {/* Alerts + Next 7 */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-          <WBox>{alerts.length>0?(<div><WTitle icon="🔔" text={"Alertas ("+alerts.length+")"}/><div style={{display:"flex",flexDirection:"column",gap:3,maxHeight:170,overflowY:"auto"}}>{alerts.slice(0,8).map((al,i) => (<div key={i} onClick={()=>onSelObra(al.obra)} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 6px",background:"rgba(0,0,0,.2)",borderRadius:5,cursor:"pointer"}}><span style={{fontSize:13}}>{aI[al.tipo]}</span><div style={{flex:1}}><span style={{fontSize:11,fontWeight:600,color:"#fff"}}>{al.obra.numero||"—"}</span><span style={{fontSize:10,color:aC2[al.tipo],marginLeft:4}}>{al.msg}</span></div><span style={{color:"#475569",fontSize:12}}>›</span></div>))}</div></div>):(<div><WTitle icon="✅" text="Sem alertas"/><div style={{fontSize:11,color:"#64748b",textAlign:"center",padding:12}}>Tudo em ordem 🎉</div></div>)}</WBox>
-          <WBox><WTitle icon="🔜" text="Próximos 7 dias"/>{next7.length===0?<div style={{color:"#64748b",fontSize:11,textAlign:"center",padding:12}}>Semana limpa</div>:(<div style={{maxHeight:170,overflowY:"auto"}}>{next7.map((it,i) => (<div key={i} style={{marginBottom:6}}><div style={{fontSize:11,fontWeight:700,color:it.day==="Hoje"?"#f59e0b":"#94a3b8",marginBottom:2}}>{it.day} <span style={{fontWeight:400,fontSize:10}}>{it.date}</span></div>{it.cortes.map(c => <div key={c.id} style={{fontSize:10,color:"#ea580c",padding:"1px 0 1px 10px"}}>🟠 Corte: {c.numero}</div>)}{it.events.map(e => <div key={e.id} style={{fontSize:10,color:"#e2e8f0",padding:"1px 0 1px 10px"}}>{e.hora?<span style={{color:"#f59e0b",fontFamily:"monospace",marginRight:4}}>{e.hora}</span>:<span style={{marginRight:4}}>·</span>}{e.texto}</div>)}</div>))}</div>)}</WBox>
+          <WBox>{alerts.length>0?(<div><WTitle icon="🔔" text={"Alertas ("+alerts.length+")"}/><div style={{display:"flex",flexDirection:"column",gap:3,maxHeight:140,overflowY:"auto"}}>{alerts.slice(0,6).map((al,i)=>(<div key={i} onClick={()=>onSelObra(al.obra)} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 6px",background:"rgba(0,0,0,.2)",borderRadius:5,cursor:"pointer"}}><span style={{fontSize:13}}>{aI[al.tipo]}</span><div style={{flex:1}}><span style={{fontSize:11,fontWeight:600,color:"#fff"}}>{al.obra.numero||"—"}</span><span style={{fontSize:10,color:aC2[al.tipo],marginLeft:4}}>{al.msg}</span></div><span style={{color:"#475569",fontSize:12}}>›</span></div>))}</div></div>):(<div><WTitle icon="✅" text="Sem alertas"/><div style={{fontSize:11,color:"#64748b",textAlign:"center",padding:8}}>Tudo em ordem 🎉</div></div>)}</WBox>
+          <WBox><WTitle icon="🔜" text="Próximos 7 dias"/>{next7.length===0?<div style={{color:"#64748b",fontSize:11,textAlign:"center",padding:8}}>Semana limpa</div>:(<div style={{maxHeight:140,overflowY:"auto"}}>{next7.map((it,i)=>(<div key={i} style={{marginBottom:5}}><div style={{fontSize:11,fontWeight:700,color:it.day==="Hoje"?"#f59e0b":"#94a3b8",marginBottom:2}}>{it.day} <span style={{fontWeight:400,fontSize:10}}>{it.date}</span></div>{it.cortes.map(c=><div key={c.id} style={{fontSize:10,color:"#ea580c",padding:"1px 0 1px 10px"}}>🟠 Corte: {c.numero}</div>)}{it.events.map(e=><div key={e.id} style={{fontSize:10,color:"#e2e8f0",padding:"1px 0 1px 10px"}}>{e.hora?<span style={{color:"#f59e0b",fontFamily:"monospace",marginRight:4}}>{e.hora}</span>:<span style={{marginRight:4}}>·</span>}{e.texto}</div>)}</div>))}</div>)}</WBox>
         </div>
+
+        {/* Weather */}
+        <div style={{marginBottom:12}}><WeatherW/></div>
+
+        {/* Categories */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:12}}>
-          {TIPOS.map(t => {const m=TM[t];const ta=a.filter(o=>o.tipo===t);const ac2=ta.filter(o=>!o.concluida).length;const dn2=ta.filter(o=>o.concluida).length;const tot=ta.length;const pct=tot>0?Math.round((dn2/tot)*100):0;
-            return (<div key={t} onClick={()=>onType(t)} style={{background:m.bg,borderRadius:11,padding:"16px 14px",cursor:"pointer",transition:"transform .15s"}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-2px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:18}}>{m.icon}</span><span style={{fontSize:15,fontWeight:700,color:"#fff"}}>{t}</span></div><span style={{fontSize:10,color:"rgba(255,255,255,.5)"}}>{m.desc}</span></div><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}><div style={{fontSize:28,fontWeight:800,color:"#fff"}}>{ac2}</div><div style={{fontSize:10,color:"rgba(255,255,255,.5)",lineHeight:1.3}}>ativas<br/>{dn2} concluídas</div></div><div style={{height:6,borderRadius:3,background:"rgba(255,255,255,.15)",overflow:"hidden"}}><div style={{height:6,borderRadius:3,background:"rgba(255,255,255,.6)",width:pct+"%"}}/></div><div style={{fontSize:9,color:"rgba(255,255,255,.4)",marginTop:3,textAlign:"right"}}>{pct}% concluído</div></div>);
+          {TIPOS.map(t=>{const m=TM[t];const ta=a.filter(o=>o.tipo===t);const ac2=ta.filter(o=>!o.concluida).length;const dn2=ta.filter(o=>o.concluida).length;const tot=ta.length;const pct=tot>0?Math.round((dn2/tot)*100):0;
+            return (<div key={t} onClick={()=>onType(t)} style={{background:m.bg,borderRadius:11,padding:"16px 14px",cursor:"pointer",transition:"transform .15s"}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-2px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"}><div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}><span style={{fontSize:18}}>{m.icon}</span><span style={{fontSize:15,fontWeight:700,color:"#fff"}}>{t}</span></div><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}><div style={{fontSize:28,fontWeight:800,color:"#fff"}}>{ac2}</div><div style={{fontSize:10,color:"rgba(255,255,255,.5)",lineHeight:1.3}}>ativas<br/>{dn2} concl.</div></div><div style={{height:6,borderRadius:3,background:"rgba(255,255,255,.15)",overflow:"hidden"}}><div style={{height:6,borderRadius:3,background:"rgba(255,255,255,.6)",width:pct+"%"}}/></div></div>);
           })}
         </div>
-        {activity.length>0 && (<div style={{marginBottom:12}}><WBox><WTitle icon="⚡" text="Atividade Recente"/><div style={{maxHeight:160,overflowY:"auto"}}>{activity.map((a2,i) => (<div key={i} style={{display:"flex",gap:8,padding:"4px 0",borderBottom:i<activity.length-1?"1px solid #293548":"none",alignItems:"center"}}><span style={{fontSize:12}}>{a2.icon}</span><div style={{flex:1}}><div style={{fontSize:11,color:"#e2e8f0"}}>{a2.text}</div><div style={{fontSize:9,color:"#64748b"}}>{fmtDT(a2.date)}</div></div><span style={{fontSize:9,color:TM[a2.tipo]?TM[a2.tipo].accent:"#64748b",fontWeight:600}}>{a2.tipo}</span></div>))}</div></WBox></div>)}
+
+        {/* Activity */}
+        {activity.length>0&&(<div style={{marginBottom:12}}><WBox><WTitle icon="⚡" text="Atividade Recente"/><div style={{maxHeight:130,overflowY:"auto"}}>{activity.map((a2,i)=>(<div key={i} style={{display:"flex",gap:8,padding:"3px 0",borderBottom:i<activity.length-1?"1px solid #293548":"none",alignItems:"center"}}><span style={{fontSize:12}}>{a2.icon}</span><div style={{flex:1}}><div style={{fontSize:11,color:"#e2e8f0"}}>{a2.text}</div><div style={{fontSize:9,color:"#64748b"}}>{fmtDT(a2.date)}</div></div><span style={{fontSize:9,color:TM[a2.tipo]?TM[a2.tipo].accent:"#64748b",fontWeight:600}}>{a2.tipo}</span></div>))}</div></WBox></div>)}
+
+        {/* Map */}
+        <div style={{marginBottom:12}}><AllObrasMap obras={obras} onSelect={onSelObra}/></div>
+
+        {/* Calendar + Todo */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
           <CalendarW events={events} onAdd={onAddEv} onRemove={onRemEv}/>
           <TodoW todos={todos} onAdd={onAddTd} onToggle={onTogTd} onRemove={onRemTd}/>
@@ -416,59 +321,137 @@ function Landing({obras,onType,onNew,onSelObra,events,onAddEv,onRemEv,todos,onAd
   );
 }
 
-/* ── CATEGORY PAGE ── */
+/* ── CATEGORY ── */
 function Category({tipo,obras,onBack,onSelect,onNew}) {
-  const m = TM[tipo];const [s,setS] = useState("");const [tab,setTab] = useState("ativas");
-  const list = obras.filter(o => {if(o.tipo!==tipo||o.arquivada) return false;if(tab==="ativas"&&o.concluida) return false;if(tab==="concluidas"&&!o.concluida) return false;if(s){const q=s.toLowerCase();return [o.numero,o.designacao,o.concelho,o.pse].some(f2=>(f2||"").toLowerCase().includes(q));}return true;});
-  const cA = obras.filter(o=>o.tipo===tipo&&!o.arquivada&&!o.concluida).length;
-  const cC = obras.filter(o=>o.tipo===tipo&&!o.arquivada&&o.concluida).length;
+  const m=TM[tipo];const [s,setS]=useState("");const [tab,setTab]=useState("ativas");const [tagF,setTagF]=useState("");
+  const list=obras.filter(o=>{if(o.tipo!==tipo||o.arquivada)return false;if(tab==="ativas"&&o.concluida)return false;if(tab==="concluidas"&&!o.concluida)return false;if(tagF&&!(o.tags||[]).includes(tagF))return false;if(s){const q=s.toLowerCase();return [o.numero,o.designacao,o.concelho,o.pse].some(f2=>(f2||"").toLowerCase().includes(q));}return true;});
+  const cA=obras.filter(o=>o.tipo===tipo&&!o.arquivada&&!o.concluida).length,cC=obras.filter(o=>o.tipo===tipo&&!o.arquivada&&o.concluida).length;
+  const allTags=[...new Set(obras.filter(o=>o.tipo===tipo).flatMap(o=>o.tags||[]))];
+
   return (
     <div style={{minHeight:"100vh",background:"#f8fafc"}}>
       <div style={{background:m.bg,padding:"14px 24px 18px"}}><BackBtn onClick={onBack} label="Início"/><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:3}}><div style={{display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:20}}>{m.icon}</span><h1 style={{fontSize:17,fontWeight:800,color:"#fff",margin:0}}>{m.label}</h1></div><button onClick={onNew} style={{padding:"6px 12px",borderRadius:5,border:"none",background:"rgba(255,255,255,.18)",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer"}}>+ Nova</button></div></div>
       <div style={{padding:"8px 24px 0",display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-        <div style={{display:"flex",gap:2,background:"#e2e8f0",borderRadius:5,padding:2}}>{[{k:"ativas",l:"Ativas ("+cA+")"},{k:"concluidas",l:"Concluídas ("+cC+")"}].map(({k,l}) => (<button key={k} onClick={()=>setTab(k)} style={{padding:"4px 8px",borderRadius:4,border:"none",background:tab===k?"#fff":"transparent",color:tab===k?"#0f172a":"#64748b",fontWeight:tab===k?600:400,fontSize:10,cursor:"pointer"}}>{l}</button>))}</div>
-        <input style={{flex:1,minWidth:80,maxWidth:180,padding:"5px 8px",borderRadius:5,border:"1px solid #e2e8f0",fontSize:11,outline:"none",background:"#fff"}} placeholder="Pesquisar..." value={s} onChange={e=>setS(e.target.value)}/>
+        <div style={{display:"flex",gap:2,background:"#e2e8f0",borderRadius:5,padding:2}}>{[{k:"ativas",l:"Ativas ("+cA+")"},{k:"concluidas",l:"Concluídas ("+cC+")"}].map(({k,l})=>(<button key={k} onClick={()=>setTab(k)} style={{padding:"4px 8px",borderRadius:4,border:"none",background:tab===k?"#fff":"transparent",color:tab===k?"#0f172a":"#64748b",fontWeight:tab===k?600:400,fontSize:10,cursor:"pointer"}}>{l}</button>))}</div>
+        <input style={{flex:1,minWidth:80,maxWidth:160,padding:"5px 8px",borderRadius:5,border:"1px solid #e2e8f0",fontSize:11,outline:"none",background:"#fff"}} placeholder="Pesquisar..." value={s} onChange={e=>setS(e.target.value)}/>
       </div>
+      {/* Tag filters */}
+      {allTags.length>0&&(<div style={{padding:"6px 24px 0",display:"flex",gap:3,flexWrap:"wrap"}}>
+        <TagBadge tag="Todas" small onClick={()=>setTagF("")} />
+        {allTags.map(t=>(<TagBadge key={t} tag={t} small onClick={()=>setTagF(tagF===t?"":t)} />))}
+        {tagF&&<span style={{fontSize:10,color:"#64748b",alignSelf:"center",marginLeft:4}}>Filtro: {tagF}</span>}
+      </div>)}
       <div style={{padding:"8px 24px 20px"}}>
-        {list.length===0?(<div style={{textAlign:"center",padding:"36px 16px",color:"#94a3b8"}}><div style={{fontSize:28}}>{m.icon}</div><div style={{fontSize:11,marginTop:4}}>Sem obras</div></div>):(<div style={{display:"flex",flexDirection:"column",gap:6}}>{list.map(o => {const dn3=o.tarefas?o.tarefas.filter(t=>t.concluida).length:0;const tt2=o.tarefas?o.tarefas.length:0;const h3=(o.historicoEstados||[]).slice(-1)[0];const de3=daysAgo(h3?h3.data:o.dataCriacao);const ha2=!o.concluida&&de3>=(o.alertaDias||10);
-          return (<div key={o.id} onClick={()=>onSelect(o)} style={{background:"#fff",borderRadius:8,padding:"10px 12px",border:"1px solid "+(ha2?"#fecaca":"#e2e8f0"),cursor:"pointer",borderLeft:"3px solid "+m.accent,display:"flex",gap:8,alignItems:"center",opacity:o.concluida?.6:1}}><div style={{flex:1,minWidth:0}}><div style={{display:"flex",alignItems:"center",gap:5,marginBottom:1}}><span style={{fontWeight:700,fontSize:12,fontFamily:"monospace",color:"#0f172a"}}>{o.numero||"—"}</span>{ha2&&<span style={{fontSize:8,background:"#fef2f2",color:"#dc2626",padding:"1px 4px",borderRadius:3,fontWeight:600}}>⏰{de3}d</span>}{o.corteMarcado&&<span style={{fontSize:8,background:"#fef3c7",color:"#92400e",padding:"1px 4px",borderRadius:3,fontWeight:600}}>Corte</span>}</div><div style={{fontSize:11,color:"#475569",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginBottom:1}}>{o.designacao||"Sem designação"}</div><div style={{display:"flex",gap:4,fontSize:9,color:"#94a3b8"}}>{o.concelho&&<span>📍{o.concelho}</span>}{o.pse&&<span>🔧{o.pse}</span>}</div>{tt2>0&&<div style={{marginTop:3,display:"flex",alignItems:"center",gap:5}}><div style={{flex:1,maxWidth:70,height:3,borderRadius:2,background:"#e2e8f0"}}><div style={{width:(dn3/tt2*100)+"%",height:3,borderRadius:2,background:dn3===tt2?"#16a34a":m.accent}}/></div><span style={{fontSize:9,color:"#94a3b8"}}>{dn3}/{tt2}</span></div>}</div><div style={{display:"flex",gap:3,flexShrink:0}}><Pill active={o.temLicenciamento} label="Lic." color="#3b82f6"/><Pill active={o.sitEncerrado} label="SIT" color="#16a34a"/></div><span style={{color:"#cbd5e1",fontSize:13}}>›</span></div>);})}</div>)}
+        {list.length===0?(<div style={{textAlign:"center",padding:"36px 16px",color:"#94a3b8"}}><div style={{fontSize:28}}>{m.icon}</div><div style={{fontSize:11,marginTop:4}}>Sem obras</div></div>):(<div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {list.map(o=>{const dn3=o.tarefas?o.tarefas.filter(t=>t.concluida).length:0;const tt2=o.tarefas?o.tarefas.length:0;const h3=(o.historicoEstados||[]).slice(-1)[0];const de3=daysAgo(h3?h3.data:o.dataCriacao);const ha2=!o.concluida&&de3>=(o.alertaDias||10);
+            return (<div key={o.id} onClick={()=>onSelect(o)} style={{background:"#fff",borderRadius:8,padding:"10px 12px",border:"1px solid "+(ha2?"#fecaca":"#e2e8f0"),cursor:"pointer",borderLeft:"3px solid "+m.accent,display:"flex",gap:8,alignItems:"center",opacity:o.concluida?.6:1}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:1,flexWrap:"wrap"}}><span style={{fontWeight:700,fontSize:12,fontFamily:"monospace",color:"#0f172a"}}>{o.numero||"—"}</span>{ha2&&<span style={{fontSize:8,background:"#fef2f2",color:"#dc2626",padding:"1px 4px",borderRadius:3,fontWeight:600}}>⏰{de3}d</span>}{o.corteMarcado&&<span style={{fontSize:8,background:"#fef3c7",color:"#92400e",padding:"1px 4px",borderRadius:3,fontWeight:600}}>Corte</span>}{(o.tags||[]).map(t=>(<TagBadge key={t} tag={t} small/>))}</div>
+                <div style={{fontSize:11,color:"#475569",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginBottom:1}}>{o.designacao||"Sem designação"}</div>
+                <div style={{display:"flex",gap:4,fontSize:9,color:"#94a3b8"}}>{o.concelho&&<span>📍{o.concelho}</span>}{o.pse&&<span>🔧{o.pse}</span>}</div>
+                {tt2>0&&<div style={{marginTop:3,display:"flex",alignItems:"center",gap:5}}><div style={{flex:1,maxWidth:70,height:3,borderRadius:2,background:"#e2e8f0"}}><div style={{width:(dn3/tt2*100)+"%",height:3,borderRadius:2,background:dn3===tt2?"#16a34a":m.accent}}/></div><span style={{fontSize:9,color:"#94a3b8"}}>{dn3}/{tt2}</span></div>}
+              </div>
+              <div style={{display:"flex",gap:3,flexShrink:0}}><Pill active={o.temLicenciamento} label="Lic." color="#3b82f6"/><Pill active={o.sitEncerrado} label="SIT" color="#16a34a"/></div>
+              <span style={{color:"#cbd5e1",fontSize:13}}>›</span>
+            </div>);
+          })}
+        </div>)}
       </div>
     </div>
   );
 }
 
-/* ── OBRA DETAIL PAGE ── */
+/* ── OBRA DETAIL ── */
 function ObraPage({obra:init,onBack,onSave,onDelete,isNew}) {
-  const [o,setO] = useState({...init});const [nN,setNN] = useState("");const [nT,setNT] = useState("");const [nDp,setNDp] = useState("");const [nON,setNON] = useState("");const [nOD,setNOD] = useState("");const [dpA,setDpA] = useState(null);const [ed,setEd] = useState(isNew);const [dirty,setDirty] = useState(false);const [sH,setSH] = useState(false);const [pE] = useState(init.estadoAtual||"");const m = TM[o.tipo];
-  const set = (k,v) => {setO(p=>({...p,[k]:v}));setDirty(true);};
-  const doSave = () => {let u={...o};if(o.estadoAtual!==pE&&o.estadoAtual.trim()){u.historicoEstados=[...(u.historicoEstados||[]),{estado:o.estadoAtual,data:new Date().toISOString(),anterior:pE||"—"}];}onSave(u);setDirty(false);setEd(false);};
-  const aT = () => {if(!nT.trim()) return;set("tarefas",[...(o.tarefas||[]),{id:uid(),texto:nT.trim(),concluida:false,dataConclusao:""}]);setNT("");};
-  const tT = (id) => set("tarefas",(o.tarefas||[]).map(t=>t.id===id?{...t,concluida:!t.concluida,dataConclusao:!t.concluida?new Date().toISOString():""}:t));
-  const rT = (id) => set("tarefas",(o.tarefas||[]).filter(t=>t.id!==id));
-  const aDp = () => {if(!nDp.trim()) return;set("dps",[...(o.dps||[]),{id:uid(),numero:nDp.trim(),ots:[]}]);setNDp("");};
-  const rDp = (id) => set("dps",(o.dps||[]).filter(d=>d.id!==id));
-  const aOt = (did) => {if(!nON.trim()) return;set("dps",(o.dps||[]).map(d=>d.id===did?{...d,ots:[...d.ots,{id:uid(),numero:nON.trim(),descricao:nOD.trim()}]}:d));setNON("");setNOD("");setDpA(null);};
-  const rOt = (did,oid) => set("dps",(o.dps||[]).map(d=>d.id===did?{...d,ots:d.ots.filter(t=>t.id!==oid)}:d));
-  const aN = () => {if(!nN.trim()) return;set("notas",[...(o.notas||[]),{id:uid(),data:new Date().toISOString(),texto:nN.trim()}]);setNN("");};
-  const rN = (id) => set("notas",(o.notas||[]).filter(n=>n.id!==id));
-  const fl = {width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid "+(ed?"#e2e8f0":"#f1f5f9"),fontSize:12,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:ed?"#fff":"#f8fafc",color:"#334155"};
-  const lb = {fontSize:10,fontWeight:600,color:"#64748b",textTransform:"uppercase",letterSpacing:".4px",marginBottom:3,display:"block"};
-  const sc = {background:"#fff",borderRadius:9,padding:13,marginBottom:9,border:"1px solid #e2e8f0"};
-  const sh2 = {fontSize:12,fontWeight:700,color:"#0f172a",marginBottom:9,display:"flex",alignItems:"center",gap:6};
-  const tP = (o.tarefas||[]).filter(t=>!t.concluida);const tD = (o.tarefas||[]).filter(t=>t.concluida);const hi = (o.historicoEstados||[]).slice().reverse();
+  const [o,setO]=useState({...init});const [nN,setNN]=useState("");const [nT,setNT]=useState("");const [nDp,setNDp]=useState("");const [nON,setNON]=useState("");const [nOD,setNOD]=useState("");const [dpA,setDpA]=useState(null);const [ed,setEd]=useState(isNew);const [dirty,setDirty]=useState(false);const [sH,setSH]=useState(false);const [pE]=useState(init.estadoAtual||"");const m=TM[o.tipo];
+  // Visit state
+  const [vData,setVData]=useState("");const [vPart,setVPart]=useState("");const [vNotas,setVNotas]=useState("");
+  const set=(k,v)=>{setO(p=>({...p,[k]:v}));setDirty(true);};
+  const doSave=()=>{let u={...o};if(o.estadoAtual!==pE&&o.estadoAtual.trim()){u.historicoEstados=[...(u.historicoEstados||[]),{estado:o.estadoAtual,data:new Date().toISOString(),anterior:pE||"—"}];}onSave(u);setDirty(false);setEd(false);};
+  const aT=()=>{if(!nT.trim())return;set("tarefas",[...(o.tarefas||[]),{id:uid(),texto:nT.trim(),concluida:false,dataConclusao:""}]);setNT("");};
+  const tT=(id)=>set("tarefas",(o.tarefas||[]).map(t=>t.id===id?{...t,concluida:!t.concluida,dataConclusao:!t.concluida?new Date().toISOString():""}:t));
+  const rT=(id)=>set("tarefas",(o.tarefas||[]).filter(t=>t.id!==id));
+  const aDp=()=>{if(!nDp.trim())return;set("dps",[...(o.dps||[]),{id:uid(),numero:nDp.trim(),ots:[]}]);setNDp("");};
+  const rDp=(id)=>set("dps",(o.dps||[]).filter(d=>d.id!==id));
+  const aOt=(did)=>{if(!nON.trim())return;set("dps",(o.dps||[]).map(d=>d.id===did?{...d,ots:[...d.ots,{id:uid(),numero:nON.trim(),descricao:nOD.trim()}]}:d));setNON("");setNOD("");setDpA(null);};
+  const rOt=(did,oid)=>set("dps",(o.dps||[]).map(d=>d.id===did?{...d,ots:d.ots.filter(t=>t.id!==oid)}:d));
+  const aN=()=>{if(!nN.trim())return;set("notas",[...(o.notas||[]),{id:uid(),data:new Date().toISOString(),texto:nN.trim()}]);setNN("");};
+  const rN=(id)=>set("notas",(o.notas||[]).filter(n=>n.id!==id));
+  // Visit
+  const addVisita=()=>{if(!vNotas.trim())return;set("visitas",[...(o.visitas||[]),{id:uid(),data:vData||new Date().toISOString().slice(0,10),participantes:vPart,notas:vNotas.trim()}]);setVData("");setVPart("");setVNotas("");};
+  const removeVisita=(id)=>set("visitas",(o.visitas||[]).filter(v=>v.id!==id));
+  // Tags
+  const toggleTag=(tag)=>{const tags=o.tags||[];set("tags",tags.includes(tag)?tags.filter(t=>t!==tag):[...tags,tag]);};
+
+  const fl={width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid "+(ed?"#e2e8f0":"#f1f5f9"),fontSize:12,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:ed?"#fff":"#f8fafc",color:"#334155"};
+  const lb={fontSize:10,fontWeight:600,color:"#64748b",textTransform:"uppercase",letterSpacing:".4px",marginBottom:3,display:"block"};
+  const sc={background:"#fff",borderRadius:9,padding:13,marginBottom:9,border:"1px solid #e2e8f0"};
+  const sh2={fontSize:12,fontWeight:700,color:"#0f172a",marginBottom:9,display:"flex",alignItems:"center",gap:6};
+  const tP=(o.tarefas||[]).filter(t=>!t.concluida);const tD=(o.tarefas||[]).filter(t=>t.concluida);const hi=(o.historicoEstados||[]).slice().reverse();
+
   return (
     <div style={{minHeight:"100vh",background:"#f1f5f9"}}>
-      <div style={{background:m.bg,padding:"11px 24px 15px"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><BackBtn onClick={onBack} label={m.label}/><div style={{display:"flex",gap:5}}>{!isNew&&!ed&&<button onClick={()=>setEd(true)} style={{padding:"4px 10px",borderRadius:4,border:"1px solid rgba(255,255,255,.3)",background:"rgba(255,255,255,.1)",color:"#fff",fontSize:10,fontWeight:600,cursor:"pointer"}}>✏️ Editar</button>}{(ed||dirty)&&<button onClick={doSave} style={{padding:"4px 10px",borderRadius:4,border:"none",background:"#f59e0b",color:"#0f172a",fontSize:10,fontWeight:700,cursor:"pointer"}}>💾 Guardar</button>}</div></div><div style={{marginTop:5}}><div style={{fontSize:9,color:"rgba(255,255,255,.4)",fontWeight:600,letterSpacing:1}}>{o.tipo}{o.concluida?" · CONCLUÍDA":""}</div><h1 style={{fontSize:17,fontWeight:800,color:"#fff",margin:"2px 0 0"}}>{o.numero||"Nova Obra"}</h1>{o.designacao&&<p style={{color:"rgba(255,255,255,.5)",fontSize:11,margin:"1px 0 0"}}>{o.designacao}</p>}</div></div>
+      <div style={{background:m.bg,padding:"11px 24px 15px"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><BackBtn onClick={onBack} label={m.label}/><div style={{display:"flex",gap:5}}>{!isNew&&!ed&&<button onClick={()=>setEd(true)} style={{padding:"4px 10px",borderRadius:4,border:"1px solid rgba(255,255,255,.3)",background:"rgba(255,255,255,.1)",color:"#fff",fontSize:10,fontWeight:600,cursor:"pointer"}}>✏️ Editar</button>}{(ed||dirty)&&<button onClick={doSave} style={{padding:"4px 10px",borderRadius:4,border:"none",background:"#f59e0b",color:"#0f172a",fontSize:10,fontWeight:700,cursor:"pointer"}}>💾 Guardar</button>}</div></div><div style={{marginTop:5}}><div style={{fontSize:9,color:"rgba(255,255,255,.4)",fontWeight:600,letterSpacing:1}}>{o.tipo}{o.concluida?" · CONCLUÍDA":""}</div><h1 style={{fontSize:17,fontWeight:800,color:"#fff",margin:"2px 0 0"}}>{o.numero||"Nova Obra"}</h1>{o.designacao&&<p style={{color:"rgba(255,255,255,.5)",fontSize:11,margin:"1px 0 0"}}>{o.designacao}</p>}{(o.tags||[]).length>0&&<div style={{marginTop:4,display:"flex",gap:3,flexWrap:"wrap"}}>{(o.tags||[]).map(t=>(<TagBadge key={t} tag={t} small/>))}</div>}</div></div>
       <div style={{padding:"11px 24px 32px",maxWidth:600,margin:"0 auto"}}>
-        {isNew&&(<div style={sc}><div style={sh2}>📂 Tipo</div><div style={{display:"flex",gap:5}}>{TIPOS.map(t => <button key={t} onClick={()=>set("tipo",t)} style={{flex:1,padding:"7px 0",borderRadius:5,border:"2px solid "+(o.tipo===t?TM[t].accent:"#e2e8f0"),background:o.tipo===t?TM[t].card:"#fff",color:o.tipo===t?TM[t].dark:"#94a3b8",fontWeight:700,fontSize:11,cursor:"pointer"}}>{TM[t].icon} {t}</button>)}</div></div>)}
+        {isNew&&(<div style={sc}><div style={sh2}>📂 Tipo</div><div style={{display:"flex",gap:5}}>{TIPOS.map(t=><button key={t} onClick={()=>set("tipo",t)} style={{flex:1,padding:"7px 0",borderRadius:5,border:"2px solid "+(o.tipo===t?TM[t].accent:"#e2e8f0"),background:o.tipo===t?TM[t].card:"#fff",color:o.tipo===t?TM[t].dark:"#94a3b8",fontWeight:700,fontSize:11,cursor:"pointer"}}>{TM[t].icon} {t}</button>)}</div></div>)}
+
+        {/* Tags */}
+        <div style={sc}><div style={sh2}>🏷️ Tags</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+            {TAGS_PRESET.map(tag=>{const active=(o.tags||[]).includes(tag);return (<span key={tag} onClick={()=>ed&&toggleTag(tag)} className="tag-btn" style={{background:active?(TAG_COLORS[tag]||"#64748b")+"18":"#f8fafc",color:active?TAG_COLORS[tag]||"#64748b":"#94a3b8",borderColor:active?(TAG_COLORS[tag]||"#64748b")+"40":"#e2e8f0",cursor:ed?"pointer":"default"}}>{tag}</span>);})}
+          </div>
+        </div>
+
+        {/* Identificação */}
         <div style={sc}><div style={sh2}>🏷️ Identificação</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}><div><label style={lb}>Número</label><input style={fl} value={o.numero} onChange={e=>set("numero",e.target.value)} readOnly={!ed}/></div><div><label style={lb}>Concelho</label><input style={fl} value={o.concelho} onChange={e=>set("concelho",e.target.value)} readOnly={!ed}/></div></div><div style={{marginTop:7}}><label style={lb}>Designação</label><input style={fl} value={o.designacao} onChange={e=>set("designacao",e.target.value)} readOnly={!ed}/></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginTop:7}}><div><label style={lb}>PSE</label><input style={fl} value={o.pse} onChange={e=>set("pse",e.target.value)} readOnly={!ed}/></div><div><label style={lb}>Estado</label><input style={{...fl,borderColor:ed?"#3b82f6":"#f1f5f9",fontWeight:600}} value={o.estadoAtual} onChange={e=>set("estadoAtual",e.target.value)} readOnly={!ed}/></div></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7,marginTop:7}}><div><label style={lb}>Início</label><input type="date" style={fl} value={o.dataInicio} onChange={e=>set("dataInicio",e.target.value)} readOnly={!ed}/></div><div><label style={lb}>Fim</label><input type="date" style={fl} value={o.dataFim} onChange={e=>set("dataFim",e.target.value)} readOnly={!ed}/></div><div><label style={lb}>Consulta</label><input type="date" style={fl} value={o.dataUltimaConsulta} onChange={e=>set("dataUltimaConsulta",e.target.value)} readOnly={!ed}/></div></div>{ed&&<div style={{marginTop:7,display:"flex",alignItems:"center",gap:5}}><label style={{...lb,marginBottom:0}}>⏰ Alerta</label><input type="number" min="1" max="90" style={{...fl,width:46,textAlign:"center",padding:"3px 5px"}} value={o.alertaDias||10} onChange={e=>set("alertaDias",parseInt(e.target.value)||10)}/><span style={{fontSize:9,color:"#94a3b8"}}>dias</span></div>}</div>
-        {hi.length>0&&(<div style={sc}><div style={{...sh2,cursor:"pointer"}} onClick={()=>setSH(!sH)}>📊 Histórico ({hi.length}) <span style={{fontSize:10,color:"#94a3b8",marginLeft:"auto"}}>{sH?"▲":"▼"}</span></div>{sH?hi.map((h,i) => (<div key={i} style={{display:"flex",alignItems:"center",gap:7,padding:"5px 0",borderBottom:i<hi.length-1?"1px solid #f1f5f9":"none"}}><div style={{width:7,height:7,borderRadius:4,background:i===0?m.accent:"#cbd5e1",flexShrink:0}}/><div><div style={{fontSize:11,fontWeight:600,color:i===0?"#0f172a":"#64748b"}}>{h.estado}</div><div style={{fontSize:9,color:"#94a3b8"}}>{fmtDT(h.data)} {h.anterior!=="—"?"← "+h.anterior:""}</div></div></div>)):<div style={{fontSize:11,color:"#64748b"}}>Último: <strong>{hi[0]?hi[0].estado:""}</strong> ({hi[0]?fmtD(hi[0].data):""})</div>}</div>)}
-        <div style={sc}><div style={sh2}>📐 DPs & OTs</div>{(o.dps||[]).map(dp => (<div key={dp.id} style={{background:"#f8fafc",borderRadius:5,padding:8,marginBottom:4,border:"1px solid #f1f5f9"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}><span style={{fontWeight:700,fontSize:11,color:m.accent,fontFamily:"monospace"}}>DP: {dp.numero}</span>{ed&&<button onClick={()=>rDp(dp.id)} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:10,opacity:.4}}>✕</button>}</div>{dp.ots.map(ot => (<div key={ot.id} style={{display:"flex",gap:4,alignItems:"center",padding:"2px 0 2px 8px",fontSize:10,color:"#475569"}}><span style={{color:"#94a3b8"}}>└</span><span style={{fontFamily:"monospace",fontWeight:600}}>OT {ot.numero}</span>{ot.descricao&&<span style={{color:"#94a3b8"}}>· {ot.descricao}</span>}{ed&&<button onClick={()=>rOt(dp.id,ot.id)} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:9,opacity:.3,marginLeft:"auto"}}>✕</button>}</div>))}{ed&&dpA===dp.id?(<div style={{display:"flex",gap:3,marginTop:3,flexWrap:"wrap"}}><input style={{...fl,flex:1,minWidth:50,maxWidth:90,padding:"3px 4px",fontSize:10}} placeholder="OT" value={nON} onChange={e=>setNON(e.target.value)}/><input style={{...fl,flex:2,minWidth:70,padding:"3px 4px",fontSize:10}} placeholder="Desc" value={nOD} onChange={e=>setNOD(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")aOt(dp.id);}}/><button onClick={()=>aOt(dp.id)} style={{padding:"2px 6px",borderRadius:3,border:"none",background:m.accent,color:"#fff",fontSize:9,cursor:"pointer"}}>+</button></div>):ed&&<button onClick={()=>setDpA(dp.id)} style={{background:"none",border:"none",color:m.accent,fontSize:9,cursor:"pointer",marginTop:1}}>+ OT</button>}</div>))}{ed&&(<div style={{display:"flex",gap:3,marginTop:2}}><input style={{...fl,flex:1,padding:"5px 7px",fontSize:10}} placeholder="Nova DP" value={nDp} onChange={e=>setNDp(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")aDp();}}/><button onClick={aDp} style={{padding:"4px 8px",borderRadius:4,border:"none",background:m.accent,color:"#fff",fontSize:10,fontWeight:600,cursor:"pointer"}}>+ DP</button></div>)}{(!o.dps||o.dps.length===0)&&!ed&&<div style={{color:"#94a3b8",fontSize:10,textAlign:"center",padding:4}}>Sem DPs</div>}</div>
+
+        {/* Histórico */}
+        {hi.length>0&&(<div style={sc}><div style={{...sh2,cursor:"pointer"}} onClick={()=>setSH(!sH)}>📊 Histórico ({hi.length}) <span style={{fontSize:10,color:"#94a3b8",marginLeft:"auto"}}>{sH?"▲":"▼"}</span></div>{sH?hi.map((h,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:7,padding:"5px 0",borderBottom:i<hi.length-1?"1px solid #f1f5f9":"none"}}><div style={{width:7,height:7,borderRadius:4,background:i===0?m.accent:"#cbd5e1",flexShrink:0}}/><div><div style={{fontSize:11,fontWeight:600,color:i===0?"#0f172a":"#64748b"}}>{h.estado}</div><div style={{fontSize:9,color:"#94a3b8"}}>{fmtDT(h.data)} {h.anterior!=="—"?"← "+h.anterior:""}</div></div></div>)):<div style={{fontSize:11,color:"#64748b"}}>Último: <strong>{hi[0]?hi[0].estado:""}</strong> ({hi[0]?fmtD(hi[0].data):""})</div>}</div>)}
+
+        {/* DPs & OTs */}
+        <div style={sc}><div style={sh2}>📐 DPs & OTs</div>{(o.dps||[]).map(dp=>(<div key={dp.id} style={{background:"#f8fafc",borderRadius:5,padding:8,marginBottom:4,border:"1px solid #f1f5f9"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}><span style={{fontWeight:700,fontSize:11,color:m.accent,fontFamily:"monospace"}}>DP: {dp.numero}</span>{ed&&<button onClick={()=>rDp(dp.id)} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:10,opacity:.4}}>✕</button>}</div>{dp.ots.map(ot=>(<div key={ot.id} style={{display:"flex",gap:4,alignItems:"center",padding:"2px 0 2px 8px",fontSize:10,color:"#475569"}}><span style={{color:"#94a3b8"}}>└</span><span style={{fontFamily:"monospace",fontWeight:600}}>OT {ot.numero}</span>{ot.descricao&&<span style={{color:"#94a3b8"}}>· {ot.descricao}</span>}{ed&&<button onClick={()=>rOt(dp.id,ot.id)} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:9,opacity:.3,marginLeft:"auto"}}>✕</button>}</div>))}{ed&&dpA===dp.id?(<div style={{display:"flex",gap:3,marginTop:3,flexWrap:"wrap"}}><input style={{...fl,flex:1,minWidth:50,maxWidth:90,padding:"3px 4px",fontSize:10}} placeholder="OT" value={nON} onChange={e=>setNON(e.target.value)}/><input style={{...fl,flex:2,minWidth:70,padding:"3px 4px",fontSize:10}} placeholder="Desc" value={nOD} onChange={e=>setNOD(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")aOt(dp.id);}}/><button onClick={()=>aOt(dp.id)} style={{padding:"2px 6px",borderRadius:3,border:"none",background:m.accent,color:"#fff",fontSize:9,cursor:"pointer"}}>+</button></div>):ed&&<button onClick={()=>setDpA(dp.id)} style={{background:"none",border:"none",color:m.accent,fontSize:9,cursor:"pointer",marginTop:1}}>+ OT</button>}</div>))}{ed&&(<div style={{display:"flex",gap:3,marginTop:2}}><input style={{...fl,flex:1,padding:"5px 7px",fontSize:10}} placeholder="Nova DP" value={nDp} onChange={e=>setNDp(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")aDp();}}/><button onClick={aDp} style={{padding:"4px 8px",borderRadius:4,border:"none",background:m.accent,color:"#fff",fontSize:10,fontWeight:600,cursor:"pointer"}}>+ DP</button></div>)}{(!o.dps||o.dps.length===0)&&!ed&&<div style={{color:"#94a3b8",fontSize:10,textAlign:"center",padding:4}}>Sem DPs</div>}</div>
+
+        {/* Localização */}
         <div style={sc}><div style={sh2}>📍 Localização</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}><div><label style={lb}>Lat</label><input style={fl} value={o.latitude} onChange={e=>set("latitude",e.target.value)} readOnly={!ed} placeholder="40.8387"/></div><div><label style={lb}>Lng</label><input style={fl} value={o.longitude} onChange={e=>set("longitude",e.target.value)} readOnly={!ed} placeholder="-8.4774"/></div></div><MapEmbed lat={parseFloat(o.latitude)} lng={parseFloat(o.longitude)}/></div>
-        <div style={sc}><div style={sh2}>✅ Checklist ({tP.length})</div><div style={{display:"flex",gap:4,marginBottom:7}}><input style={{...fl,flex:1,border:"1px solid #e2e8f0",background:"#fff"}} placeholder="Nova tarefa..." value={nT} onChange={e=>setNT(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")aT();}}/><button onClick={aT} style={{padding:"0 9px",borderRadius:5,border:"none",background:m.accent,color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>+</button></div>{tP.map(t => (<div key={t.id} style={{display:"flex",alignItems:"center",gap:2,borderBottom:"1px solid #f8fafc"}}><div style={{flex:1}}><Toggle checked={false} onChange={()=>tT(t.id)} label={t.texto} strikethrough/></div><button onClick={()=>rT(t.id)} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:10,opacity:.3}}>✕</button></div>))}{tD.length>0&&(<div><div style={{fontSize:9,color:"#94a3b8",fontWeight:600,marginTop:8,marginBottom:2}}>FEITAS ({tD.length})</div>{tD.map(t => (<div key={t.id} style={{display:"flex",alignItems:"center",gap:2,opacity:.5,borderBottom:"1px solid #fafbfc"}}><div style={{flex:1}}><Toggle checked={true} onChange={()=>tT(t.id)} label={t.texto} strikethrough/></div><span style={{fontSize:9,color:"#94a3b8"}}>{fmtD(t.dataConclusao)}</span><button onClick={()=>rT(t.id)} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:10,opacity:.3}}>✕</button></div>))}</div>)}</div>
+
+        {/* Checklist */}
+        <div style={sc}><div style={sh2}>✅ Checklist ({tP.length})</div><div style={{display:"flex",gap:4,marginBottom:7}}><input style={{...fl,flex:1,border:"1px solid #e2e8f0",background:"#fff"}} placeholder="Nova tarefa..." value={nT} onChange={e=>setNT(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")aT();}}/><button onClick={aT} style={{padding:"0 9px",borderRadius:5,border:"none",background:m.accent,color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>+</button></div>{tP.map(t=>(<div key={t.id} style={{display:"flex",alignItems:"center",gap:2,borderBottom:"1px solid #f8fafc"}}><div style={{flex:1}}><Toggle checked={false} onChange={()=>tT(t.id)} label={t.texto} strikethrough/></div><button onClick={()=>rT(t.id)} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:10,opacity:.3}}>✕</button></div>))}{tD.length>0&&(<div><div style={{fontSize:9,color:"#94a3b8",fontWeight:600,marginTop:8,marginBottom:2}}>FEITAS ({tD.length})</div>{tD.map(t=>(<div key={t.id} style={{display:"flex",alignItems:"center",gap:2,opacity:.5,borderBottom:"1px solid #fafbfc"}}><div style={{flex:1}}><Toggle checked={true} onChange={()=>tT(t.id)} label={t.texto} strikethrough/></div><span style={{fontSize:9,color:"#94a3b8"}}>{fmtD(t.dataConclusao)}</span><button onClick={()=>rT(t.id)} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:10,opacity:.3}}>✕</button></div>))}</div>)}</div>
+
+        {/* Visitas ao terreno */}
+        <div style={sc}>
+          <div style={sh2}>👷 Visitas ao Terreno ({(o.visitas||[]).length})</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
+            <div><label style={lb}>Data</label><input type="date" style={{...fl,border:"1px solid #e2e8f0",background:"#fff"}} value={vData} onChange={e=>setVData(e.target.value)}/></div>
+            <div><label style={lb}>Participantes</label><input style={{...fl,border:"1px solid #e2e8f0",background:"#fff"}} value={vPart} onChange={e=>setVPart(e.target.value)} placeholder="Miguel, Julio..."/></div>
+          </div>
+          <div style={{display:"flex",gap:4,marginBottom:8}}>
+            <input style={{...fl,flex:1,border:"1px solid #e2e8f0",background:"#fff"}} value={vNotas} onChange={e=>setVNotas(e.target.value)} placeholder="O que ficou decidido..." onKeyDown={e=>{if(e.key==="Enter")addVisita();}}/>
+            <button onClick={addVisita} style={{padding:"0 9px",borderRadius:5,border:"none",background:m.accent,color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>+</button>
+          </div>
+          <div style={{maxHeight:200,overflowY:"auto"}}>
+            {(o.visitas||[]).slice().reverse().map(v=>(<div key={v.id} style={{background:"#f8fafc",borderRadius:6,padding:"8px 10px",border:"1px solid #f1f5f9",marginBottom:4}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <span style={{fontSize:10,fontWeight:700,color:m.accent}}>{fmtD(v.data)}</span>
+                  {v.participantes&&<span style={{fontSize:10,color:"#64748b"}}>👥 {v.participantes}</span>}
+                </div>
+                <button onClick={()=>removeVisita(v.id)} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:10,opacity:.3}}>✕</button>
+              </div>
+              <div style={{fontSize:11,color:"#334155",lineHeight:1.4}}>{v.notas}</div>
+            </div>))}
+            {(!o.visitas||o.visitas.length===0)&&<div style={{color:"#94a3b8",fontSize:10,textAlign:"center",padding:6}}>Sem visitas registadas</div>}
+          </div>
+        </div>
+
+        {/* Licenciamento */}
         <div style={sc}><div style={sh2}>📋 Licenciamento</div><Toggle checked={o.temLicenciamento} onChange={v=>ed&&set("temLicenciamento",v)} label="Tem licenciamento"/>{o.temLicenciamento&&<div style={{marginLeft:48,marginTop:3}}><input style={fl} value={o.estadoLicenciamento} onChange={e=>set("estadoLicenciamento",e.target.value)} readOnly={!ed}/></div>}<Toggle checked={o.pssRecebido} onChange={v=>ed&&set("pssRecebido",v)} label="PSS recebido"/><Toggle checked={o.obraCompleta} onChange={v=>ed&&set("obraCompleta",v)} label="Obra completa"/></div>
+
+        {/* Acompanhamento */}
         <div style={sc}><div style={sh2}>🔍 Acompanhamento</div><Toggle checked={o.reuniaoTerreno} onChange={v=>ed&&set("reuniaoTerreno",v)} label="Reunião terreno"/><Toggle checked={o.reuniaoEntidades} onChange={v=>ed&&set("reuniaoEntidades",v)} label="Reunião entidades"/><Toggle checked={o.problemasMateriais} onChange={v=>ed&&set("problemasMateriais",v)} label="Problemas materiais"/>{o.problemasMateriais&&<div style={{marginLeft:48}}><input style={fl} value={o.notasMateriais} onChange={e=>set("notasMateriais",e.target.value)} readOnly={!ed}/></div>}<Toggle checked={o.corteMarcado} onChange={v=>ed&&set("corteMarcado",v)} label="Corte marcado"/>{o.corteMarcado&&<div style={{marginLeft:48}}><input type="date" style={{...fl,maxWidth:140}} value={o.dataCorte} onChange={e=>set("dataCorte",e.target.value)} readOnly={!ed}/></div>}<Toggle checked={o.sitEncerrado} onChange={v=>ed&&set("sitEncerrado",v)} label="SIT encerrado"/><Toggle checked={o.concluida} onChange={v=>ed&&set("concluida",v)} label="Obra concluída"/></div>
-        <div style={sc}><div style={sh2}>📝 Diário</div><div style={{display:"flex",gap:4,marginBottom:7}}><textarea style={{...fl,resize:"vertical",minHeight:34,flex:1,border:"1px solid #e2e8f0",background:"#fff"}} value={nN} onChange={e=>setNN(e.target.value)} placeholder="Nota..." onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();aN();}}}/><button onClick={aN} style={{padding:"0 9px",borderRadius:5,border:"none",background:m.accent,color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",alignSelf:"stretch"}}>+</button></div><div style={{maxHeight:200,overflowY:"auto"}}>{(o.notas||[]).slice().reverse().map(n => (<div key={n.id} style={{background:"#fafbfc",borderRadius:5,padding:"6px 9px",border:"1px solid #f1f5f9",marginBottom:3}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}><span style={{fontSize:9,color:"#94a3b8",fontWeight:600}}>{fmtDT(n.data)}</span><button onClick={()=>rN(n.id)} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:10,opacity:.3}}>✕</button></div><div style={{fontSize:11,color:"#334155",whiteSpace:"pre-wrap",lineHeight:1.5}}>{n.texto}</div></div>))}{(!o.notas||o.notas.length===0)&&<div style={{color:"#94a3b8",fontSize:10,textAlign:"center",padding:6}}>Sem notas</div>}</div></div>
+
+        {/* Diário */}
+        <div style={sc}><div style={sh2}>📝 Diário</div><div style={{display:"flex",gap:4,marginBottom:7}}><textarea style={{...fl,resize:"vertical",minHeight:34,flex:1,border:"1px solid #e2e8f0",background:"#fff"}} value={nN} onChange={e=>setNN(e.target.value)} placeholder="Nota..." onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();aN();}}}/><button onClick={aN} style={{padding:"0 9px",borderRadius:5,border:"none",background:m.accent,color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",alignSelf:"stretch"}}>+</button></div><div style={{maxHeight:200,overflowY:"auto"}}>{(o.notas||[]).slice().reverse().map(n=>(<div key={n.id} style={{background:"#fafbfc",borderRadius:5,padding:"6px 9px",border:"1px solid #f1f5f9",marginBottom:3}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}><span style={{fontSize:9,color:"#94a3b8",fontWeight:600}}>{fmtDT(n.data)}</span><button onClick={()=>rN(n.id)} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:10,opacity:.3}}>✕</button></div><div style={{fontSize:11,color:"#334155",whiteSpace:"pre-wrap",lineHeight:1.5}}>{n.texto}</div></div>))}{(!o.notas||o.notas.length===0)&&<div style={{color:"#94a3b8",fontSize:10,textAlign:"center",padding:6}}>Sem notas</div>}</div></div>
+
         {!isNew&&(<div style={{display:"flex",justifyContent:"center",gap:16,paddingTop:3}}><button onClick={()=>set("arquivada",!o.arquivada)} style={{background:"none",border:"none",color:"#64748b",fontSize:10,cursor:"pointer"}}>📦 {o.arquivada?"Desarquivar":"Arquivar"}</button><button onClick={()=>{if(confirm("Eliminar?"))onDelete(o.id);}} style={{background:"none",border:"none",color:"#dc2626",fontSize:10,cursor:"pointer"}}>🗑 Eliminar</button></div>)}
         {(ed||dirty)&&(<div style={{position:"fixed",bottom:10,right:10,background:"#0f172a",padding:"6px 12px",borderRadius:7,boxShadow:"0 4px 20px rgba(0,0,0,.3)",display:"flex",alignItems:"center",gap:6,zIndex:100}}><span style={{color:"#94a3b8",fontSize:10}}>Por guardar</span><button onClick={doSave} style={{padding:"5px 10px",borderRadius:4,border:"none",background:"#f59e0b",color:"#0f172a",fontWeight:700,fontSize:10,cursor:"pointer"}}>💾 Guardar</button></div>)}
       </div>
@@ -476,79 +459,46 @@ function ObraPage({obra:init,onBack,onSave,onDelete,isNew}) {
   );
 }
 
-/* ── MAIN APP ── */
+/* ── APP ── */
 function App() {
-  const [obras,setObras] = useState([]);
-  const [events,setEvents] = useState([]);
-  const [todos,setTodos] = useState([]);
-  const [contacts,setContacts] = useState([]);
-  const [loaded,setLoaded] = useState(false);
-  const [page,setPage] = useState("home");
-  const [cT,setCT] = useState(null);
-  const [cO,setCO] = useState(null);
-  const [isN,setIsN] = useState(false);
-  const [syncing,setSyncing] = useState(true);
+  const [obras,setObras]=useState([]);const [events,setEvents]=useState([]);const [todos,setTodos]=useState([]);const [contacts,setContacts]=useState([]);
+  const [loaded,setLoaded]=useState(false);const [page,setPage]=useState("home");const [cT,setCT]=useState(null);const [cO,setCO]=useState(null);const [isN,setIsN]=useState(false);
 
-  useEffect(() => {
-    let count = 0;
-    const done = () => {count++;if(count>=4){setLoaded(true);setSyncing(false);}};
-    window.dataStore.load("obras", (d) => {setObras(d);done();});
-    window.dataStore.load("events", (d) => {setEvents(d);done();});
-    window.dataStore.load("todos", (d) => {setTodos(d);done();});
-    window.dataStore.load("contacts", (d) => {setContacts(d);done();});
-
-    // Listen for real-time changes from other devices
-    const unsub1 = window.dataStore.listen("obras", (d) => setObras(d));
-    const unsub2 = window.dataStore.listen("events", (d) => setEvents(d));
-    const unsub3 = window.dataStore.listen("todos", (d) => setTodos(d));
-    const unsub4 = window.dataStore.listen("contacts", (d) => setContacts(d));
-    return () => {unsub1();unsub2();unsub3();unsub4();};
+  useEffect(()=>{
+    let count=0;const done=()=>{count++;if(count>=4){setLoaded(true);}};
+    window.dataStore.load("obras",(d)=>{setObras(d);done();});
+    window.dataStore.load("events",(d)=>{setEvents(d);done();});
+    window.dataStore.load("todos",(d)=>{setTodos(d);done();});
+    window.dataStore.load("contacts",(d)=>{setContacts(d);done();});
+    const u1=window.dataStore.listen("obras",(d)=>setObras(d));
+    const u2=window.dataStore.listen("events",(d)=>setEvents(d));
+    const u3=window.dataStore.listen("todos",(d)=>setTodos(d));
+    const u4=window.dataStore.listen("contacts",(d)=>setContacts(d));
+    return ()=>{u1();u2();u3();u4();};
   },[]);
 
-  const pO = useCallback((n) => {setObras(n);window.dataStore.save("obras",n);},[]);
-  const pE = useCallback((n) => {setEvents(n);window.dataStore.save("events",n);},[]);
-  const pT = useCallback((n) => {setTodos(n);window.dataStore.save("todos",n);},[]);
-  const pC = useCallback((n) => {setContacts(n);window.dataStore.save("contacts",n);},[]);
+  const pO=useCallback((n)=>{setObras(n);window.dataStore.save("obras",n);},[]);
+  const pE=useCallback((n)=>{setEvents(n);window.dataStore.save("events",n);},[]);
+  const pT=useCallback((n)=>{setTodos(n);window.dataStore.save("todos",n);},[]);
+  const pC=useCallback((n)=>{setContacts(n);window.dataStore.save("contacts",n);},[]);
 
-  const nH = () => {setPage("home");setCT(null);setCO(null);};
-  const nCat = (t) => {setPage("cat");setCT(t);setCO(null);};
-  const nOb = (o) => {setPage("obra");setCO(o);setIsN(false);};
-  const nNew = (t) => {setCO({...EMPTY_OBRA,id:uid(),dataCriacao:new Date().toISOString(),tipo:t||"PLR"});setIsN(true);setPage("obra");};
-  const nOA = (o) => {setCT(o.tipo);setCO(o);setIsN(false);setPage("obra");};
+  const nH=()=>{setPage("home");setCT(null);setCO(null);};
+  const nCat=(t)=>{setPage("cat");setCT(t);setCO(null);};
+  const nOb=(o)=>{setPage("obra");setCO(o);setIsN(false);};
+  const nNew=(t)=>{setCO({...EMPTY_OBRA,id:uid(),dataCriacao:new Date().toISOString(),tipo:t||"PLR"});setIsN(true);setPage("obra");};
+  const nOA=(o)=>{setCT(o.tipo);setCO(o);setIsN(false);setPage("obra");};
 
-  const doSv = (obra) => {
-    const ex = obras.find(o => o.id===obra.id);
-    pO(ex ? obras.map(o => o.id===obra.id?obra:o) : [...obras,obra]);
-    setCO(obra);setIsN(false);
-  };
-  const doDl = (id) => {pO(obras.filter(o => o.id!==id));cT?nCat(cT):nH();};
+  const doSv=(obra)=>{const ex=obras.find(o=>o.id===obra.id);pO(ex?obras.map(o=>o.id===obra.id?obra:o):[...obras,obra]);setCO(obra);setIsN(false);};
+  const doDl=(id)=>{pO(obras.filter(o=>o.id!==id));cT?nCat(cT):nH();};
 
-  if (!loaded) {
-    return (
-      <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100vh",background:"#0f172a",color:"#64748b",gap:12}}>
-        <div style={{fontSize:24,fontWeight:800,color:"#fff"}}>Gestor<span style={{color:"#f59e0b"}}>Obras</span></div>
-        <div style={{fontSize:12}}>A sincronizar...</div>
-      </div>
-    );
-  }
+  if (!loaded) return (<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100vh",background:"#0f172a",color:"#64748b",gap:12}}><div style={{fontSize:24,fontWeight:800,color:"#fff"}}>Gestor<span style={{color:"#f59e0b"}}>Obras</span></div><div style={{fontSize:12}}>A sincronizar...</div></div>);
 
-  if (page==="obra" && cO) {
-    return (<ObraPage obra={cO} isNew={isN} onBack={()=>cT?nCat(cT):nH()} onSave={doSv} onDelete={doDl}/>);
-  }
-  if (page==="cat" && cT) {
-    return (<Category tipo={cT} obras={obras} onBack={nH} onSelect={nOb} onNew={()=>nNew(cT)}/>);
-  }
-  return (
-    <Landing obras={obras} onType={nCat} onNew={()=>nNew()} onSelObra={nOA}
-      events={events} onAddEv={e=>pE([...events,e])} onRemEv={id=>pE(events.filter(e=>e.id!==id))}
-      todos={todos} onAddTd={t=>pT([...todos,t])} onTogTd={id=>pT(todos.map(t=>t.id===id?{...t,concluida:!t.concluida}:t))} onRemTd={id=>pT(todos.filter(t=>t.id!==id))}
-      contacts={contacts} onAddCt={c=>pC([...contacts,c])} onRemCt={id=>pC(contacts.filter(c=>c.id!==id))}
-    />
-  );
+  if (page==="obra"&&cO) return (<ObraPage obra={cO} isNew={isN} onBack={()=>cT?nCat(cT):nH()} onSave={doSv} onDelete={doDl}/>);
+  if (page==="cat"&&cT) return (<Category tipo={cT} obras={obras} onBack={nH} onSelect={nOb} onNew={()=>nNew(cT)}/>);
+  return (<Landing obras={obras} onType={nCat} onNew={()=>nNew()} onSelObra={nOA} events={events} onAddEv={e=>pE([...events,e])} onRemEv={id=>pE(events.filter(e=>e.id!==id))} todos={todos} onAddTd={t=>pT([...todos,t])} onTogTd={id=>pT(todos.map(t=>t.id===id?{...t,concluida:!t.concluida}:t))} onRemTd={id=>pT(todos.filter(t=>t.id!==id))} contacts={contacts} onAddCt={c=>pC([...contacts,c])} onRemCt={id=>pC(contacts.filter(c=>c.id!==id))}/>);
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
 </script>
 </body>
 </html>
-
