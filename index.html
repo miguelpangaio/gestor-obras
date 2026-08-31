@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
+html{-webkit-locale:"pt"}
 body{background:#0f172a;font-family:'Inter',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
 input,textarea,select,button{font-family:inherit}
 ::-webkit-scrollbar{width:4px}
@@ -17,6 +18,10 @@ input,textarea,select,button{font-family:inherit}
 ::-webkit-scrollbar-thumb{background:#334155;border-radius:2px}
 .leaflet-container{border-radius:10px;z-index:1}
 .tag-btn{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;cursor:pointer;margin:2px;border:1px solid;transition:all .15s}
+@media(min-width:900px){
+  html{font-size:115%}
+  .tag-btn{font-size:12px;padding:3px 10px}
+}
 </style>
 </head>
 <body>
