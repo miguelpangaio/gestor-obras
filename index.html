@@ -1066,31 +1066,46 @@ function parseExcel(file) {
 
 function analyzeData(rows,prevRows) {
   const result={totais:{},estados:{},estadosOT:{},concelhos:{},novas:[],removidas:[],mudancas:[],alertas:[],resumo:""};
-  const key=r=>(r["Nº de Processo de Origem"]||"")+"_"+(r["Definição do Projeto"]||"")+"_"+(r["Subordem"]||"");
+  
+  // Helper: encontrar coluna por substring do nome
+  const cols=rows.length>0?Object.keys(rows[0]):[];
+  const findCol=(...terms)=>cols.find(c=>{const cl=c.toLowerCase();return terms.some(t=>cl.includes(t.toLowerCase()));});
+  const COL_PROC=findCol("Processo de Origem","processo");
+  const COL_DP=findCol("Defini","Projeto");
+  const COL_SUB=findCol("Subordem");
+  const COL_DESIG=findCol("Designa");
+  const COL_EST_PROG=findCol("Estado Progest");
+  const COL_EST_OT=findCol("Estado Ordem","Trabalho");
+  const COL_CONC=findCol("Concelho");
+  const COL_ULT=findCol("ltima Atualiza");
+  const COL_PSE=findCol("PSE");
+  
+  const gv=(r,col)=>(col&&r[col]!==null&&r[col]!==undefined)?r[col].toString():"";
+  const key=r=>gv(r,COL_PROC)+"_"+gv(r,COL_DP)+"_"+gv(r,COL_SUB);
 
   // Totais
   result.totais.total=rows.length;
-  result.totais.processos=new Set(rows.map(r=>r["Nº de Processo de Origem"])).size;
-  result.totais.dps=new Set(rows.map(r=>r["Definição do Projeto"]).filter(Boolean)).size;
+  result.totais.processos=new Set(rows.map(r=>gv(r,COL_PROC)).filter(Boolean)).size;
+  result.totais.dps=new Set(rows.map(r=>gv(r,COL_DP)).filter(Boolean)).size;
 
   // Estados Progest
-  rows.forEach(r=>{const e=r["Estado Progest"]||"Sem estado";result.estados[e]=(result.estados[e]||0)+1;});
+  rows.forEach(r=>{const e=gv(r,COL_EST_PROG)||"Sem estado";result.estados[e]=(result.estados[e]||0)+1;});
 
   // Estados OT
-  rows.forEach(r=>{const e=r["Estado Ordem de Trabalho"]||"Sem estado";result.estadosOT[e]=(result.estadosOT[e]||0)+1;});
+  rows.forEach(r=>{const e=gv(r,COL_EST_OT)||"Sem estado";result.estadosOT[e]=(result.estadosOT[e]||0)+1;});
 
   // Concelhos
-  rows.forEach(r=>{const c=r["Concelho"]||"Sem concelho";result.concelhos[c]=(result.concelhos[c]||0)+1;});
+  rows.forEach(r=>{const c=gv(r,COL_CONC)||"Sem concelho";result.concelhos[c]=(result.concelhos[c]||0)+1;});
 
   // Alertas - OTs pendentes com última atualização antiga
   const hoje=new Date();
   rows.forEach(r=>{
-    const ultimaAtt=r["Última Atualização Ordem"];
+    const ultimaAtt=COL_ULT?r[COL_ULT]:null;
     if(ultimaAtt){
       const d=new Date(ultimaAtt);
       const dias=Math.floor((hoje-d)/86400000);
-      if(dias>5&&(r["Estado Ordem de Trabalho"]||"").toLowerCase()==="pendente"){
-        result.alertas.push({tipo:"ot_parada",processo:r["Nº de Processo de Origem"]||"",dp:r["Definição do Projeto"]||"",designacao:r["Designação Subordem"]||"",dias:dias,estado:r["Estado Progest"]||"",concelho:r["Concelho"]||""});
+      if(dias>5&&(gv(r,COL_EST_OT)).toLowerCase()==="pendente"){
+        result.alertas.push({tipo:"ot_parada",processo:gv(r,COL_PROC),dp:gv(r,COL_DP),designacao:gv(r,COL_DESIG),dias:dias,estado:gv(r,COL_EST_PROG),concelho:gv(r,COL_CONC)});
       }
     }
   });
@@ -1098,19 +1113,33 @@ function analyzeData(rows,prevRows) {
 
   // Comparação com dia anterior
   if(prevRows&&prevRows.length>0){
-    const prevMap=new Map();prevRows.forEach(r=>prevMap.set(key(r),r));
+    const prevCols=Object.keys(prevRows[0]);
+    const pFindCol=(...terms)=>prevCols.find(c=>{const cl=c.toLowerCase();return terms.some(t=>cl.includes(t.toLowerCase()));});
+    const P_PROC=pFindCol("Processo de Origem","processo");
+    const P_DP=pFindCol("Defini","Projeto");
+    const P_SUB=pFindCol("Subordem");
+    const P_DESIG=pFindCol("Designa");
+    const P_EST_PROG=pFindCol("Estado Progest");
+    const P_EST_OT=pFindCol("Estado Ordem","Trabalho");
+    const P_CONC=pFindCol("Concelho");
+    const pgv=(r,col)=>(col&&r[col]!==null&&r[col]!==undefined)?r[col].toString():"";
+    const pkey=r=>pgv(r,P_PROC)+"_"+pgv(r,P_DP)+"_"+pgv(r,P_SUB);
+    
+    const prevMap=new Map();prevRows.forEach(r=>prevMap.set(pkey(r),r));
     const currMap=new Map();rows.forEach(r=>currMap.set(key(r),r));
 
-    // Novas (estão no current mas não no prev)
-    rows.forEach(r=>{const k=key(r);if(!prevMap.has(k)){result.novas.push({processo:r["Nº de Processo de Origem"]||"",dp:r["Definição do Projeto"]||"",designacao:r["Designação Subordem"]||"",estado:r["Estado Progest"]||"",concelho:r["Concelho"]||""});}});
+    // Novas
+    rows.forEach(r=>{const k=key(r);if(!prevMap.has(k)){result.novas.push({processo:gv(r,COL_PROC),dp:gv(r,COL_DP),designacao:gv(r,COL_DESIG),estado:gv(r,COL_EST_PROG),concelho:gv(r,COL_CONC)});}});
 
     // Removidas
-    prevRows.forEach(r=>{const k=key(r);if(!currMap.has(k)){result.removidas.push({processo:r["Nº de Processo de Origem"]||"",dp:r["Definição do Projeto"]||"",designacao:r["Designação Subordem"]||"",estado:r["Estado Progest"]||""});}});
+    prevRows.forEach(r=>{const k=pkey(r);if(!currMap.has(k)){result.removidas.push({processo:pgv(r,P_PROC),dp:pgv(r,P_DP),designacao:pgv(r,P_DESIG),estado:pgv(r,P_EST_PROG)});}});
 
     // Mudanças de estado
     rows.forEach(r=>{const k=key(r);const prev=prevMap.get(k);if(prev){
-      if(prev["Estado Progest"]!==r["Estado Progest"]){result.mudancas.push({tipo:"estado_progest",processo:r["Nº de Processo de Origem"]||"",dp:r["Definição do Projeto"]||"",de:prev["Estado Progest"]||"",para:r["Estado Progest"]||"",designacao:r["Designação Subordem"]||""});}
-      if(prev["Estado Ordem de Trabalho"]!==r["Estado Ordem de Trabalho"]){result.mudancas.push({tipo:"estado_ot",processo:r["Nº de Processo de Origem"]||"",dp:r["Definição do Projeto"]||"",de:prev["Estado Ordem de Trabalho"]||"",para:r["Estado Ordem de Trabalho"]||"",designacao:r["Designação Subordem"]||""});}
+      const currEP=gv(r,COL_EST_PROG);const prevEP=pgv(prev,P_EST_PROG);
+      if(prevEP&&currEP&&prevEP!==currEP){result.mudancas.push({tipo:"estado_progest",processo:gv(r,COL_PROC),dp:gv(r,COL_DP),de:prevEP,para:currEP,designacao:gv(r,COL_DESIG)});}
+      const currEOT=gv(r,COL_EST_OT);const prevEOT=pgv(prev,P_EST_OT);
+      if(prevEOT&&currEOT&&prevEOT!==currEOT){result.mudancas.push({tipo:"estado_ot",processo:gv(r,COL_PROC),dp:gv(r,COL_DP),de:prevEOT,para:currEOT,designacao:gv(r,COL_DESIG)});}
     }});
   }
 
@@ -1121,6 +1150,15 @@ function ExcelAnalise({onBack,estado,historico,onUpdateEstado,onUpdateHistorico}
   const [loading,setLoading]=useState(false);const [result,setResult]=useState(null);const [tab,setTab]=useState("resumo");
   const [search,setSearch]=useState("");const [searchResults,setSearchResults]=useState([]);
   const fileRef=useRef(null);
+
+  // Reduzir dados para guardar só colunas essenciais (Firebase tem limite de 1MB)
+  const slimRows=(rows)=>{
+    if(!rows||rows.length===0)return[];
+    const cols=Object.keys(rows[0]);
+    const essentialTerms=["processo","defini","projeto","subordem","designa","estado","concelho","pse","adjudica","data base fim","data fim","ltima atualiza","nome item","latitude","longitude","prioridade","tipo de processo","obs","dias est"];
+    const essentialCols=cols.filter(c=>{const cl=c.toLowerCase();return essentialTerms.some(t=>cl.includes(t));});
+    return rows.map(r=>{const slim={};essentialCols.forEach(c=>{if(r[c]!==null&&r[c]!==undefined&&r[c]!=="")slim[c]=r[c];});return slim;});
+  };
 
   // Ao abrir, se já há dados guardados, mostrar a última análise
   useEffect(()=>{
@@ -1144,8 +1182,9 @@ function ExcelAnalise({onBack,estado,historico,onUpdateEstado,onUpdateHistorico}
       const entry={data:new Date().toISOString(),ficheiro:file.name,total:rows.length,novas:analysis.novas.length,removidas:analysis.removidas.length,mudancas:analysis.mudancas.length,alertas:analysis.alertas.length};
       onUpdateHistorico([entry,...(historico||[]).slice(0,29)]);
 
-      // Guardar estado atual (sobrescrever)
-      onUpdateEstado({rows:rows,dataUpload:new Date().toISOString(),ficheiro:file.name});
+      // Guardar estado atual com colunas reduzidas
+      const slim=slimRows(rows);
+      onUpdateEstado({rows:slim,dataUpload:new Date().toISOString(),ficheiro:file.name});
     } catch(err){alert("Erro ao ler ficheiro: "+err.message);}
     setLoading(false);
   };
@@ -1155,7 +1194,7 @@ function ExcelAnalise({onBack,estado,historico,onUpdateEstado,onUpdateHistorico}
     if(!q.trim()||!estado||!estado.rows){setSearchResults([]);return;}
     const s=q.trim().toLowerCase();
     const found=estado.rows.filter(r=>{
-      return [r["Nº de Processo de Origem"],r["Definição do Projeto"],r["Subordem"],r["Designação Subordem"],r["Concelho"],r["PSE"],r["Estado Progest"],r["Estado Ordem de Trabalho"],r["Nome Item"]].some(v=>(v||"").toString().toLowerCase().includes(s));
+      return Object.values(r).some(v=>(v===null||v===undefined)?"":v.toString().toLowerCase().includes(s));
     });
     setSearchResults(found);
   };
@@ -1324,40 +1363,53 @@ function ExcelAnalise({onBack,estado,historico,onUpdateEstado,onUpdateHistorico}
                 <div style={{fontSize:10,color:"#10b981",fontWeight:600,marginBottom:8}}>{searchResults.length} resultado{searchResults.length!==1?"s":""} para "{search}"</div>
                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
                   {searchResults.map((r,i)=>{
-                    const processo=r["Nº de Processo de Origem"]||"";
-                    const isPLR=processo.toString().startsWith("9")||processo.toString().startsWith("8");
+                    // Encontrar valores por chave flexível
+                    const g=(keys)=>{for(const k of keys){const found=Object.keys(r).find(rk=>keys.some(kk=>rk.toLowerCase().includes(kk.toLowerCase())));if(found)return(r[found]||"").toString();}return"";};
+                    const processo=g(["Processo de Origem","processo"]);
+                    const dp=g(["Defini","Projeto"]);
+                    const subordem=g(["Subordem"]);
+                    const designacao=g(["Designa"]);
+                    const estadoP=g(["Estado Progest"]);
+                    const estadoOT=g(["Estado Ordem","Trabalho"]);
+                    const estadoOpExec=g(["Estado Operacional Exec","Operacional Exec"]);
+                    const diasOpExec=g(["Dias Est. Op. Exec","Dias Est"]);
+                    const tipoProc=g(["Tipo de Processo","Tipo Processo"]);
+                    const concelho=g(["Concelho"]);
+                    const pse=g(["PSE"]);
+                    const adjudicacao=g(["Adjudica"]);
+                    const dataFim=g(["Data Base Fim","Data Fim"]);
+                    const ultimaAtt=g(["ltima Atualiza","Última"]);
+                    const isPLR=processo.startsWith("9")||processo.startsWith("8");
                     const accentColor=isPLR?"#16a34a":"#3b82f6";
-                    const ultimaAtt=r["Última Atualização Ordem"];
                     const diasAtt=ultimaAtt?Math.floor((new Date()-new Date(ultimaAtt))/86400000):null;
                     return (
                       <WBox key={i} style={{padding:12,borderLeft:"3px solid "+accentColor}}>
                         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
                           <div style={{display:"flex",alignItems:"center",gap:6}}>
                             <span style={{fontSize:12}}>{isPLR?"⚡":"🏗️"}</span>
-                            <span style={{fontSize:12,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{processo}</span>
+                            <span style={{fontSize:12,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{processo||"—"}</span>
                             <span style={{fontSize:9,background:accentColor+"20",color:accentColor,padding:"1px 5px",borderRadius:3,fontWeight:600}}>{isPLR?"PLR":"RP"}</span>
+                            {tipoProc&&<span style={{fontSize:9,background:"#47556920",color:"#94a3b8",padding:"1px 5px",borderRadius:3}}>{tipoProc}</span>}
                           </div>
-                          {diasAtt!==null&&<span style={{fontSize:9,color:diasAtt>10?"#f59e0b":"#64748b"}}>att: {diasAtt}d</span>}
+                          {diasAtt!==null&&diasAtt>0&&diasAtt<9999&&<span style={{fontSize:9,color:diasAtt>10?"#f59e0b":"#64748b"}}>att: {diasAtt}d</span>}
                         </div>
-                        <div style={{fontSize:11,color:"#e2e8f0",marginBottom:4}}>{r["Designação Subordem"]||""}</div>
-                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,fontSize:10}}>
-                          <div><span style={{color:"#64748b"}}>DP: </span><span style={{color:"#f59e0b",fontFamily:"monospace"}}>{r["Definição do Projeto"]||"—"}</span></div>
-                          <div><span style={{color:"#64748b"}}>OT: </span><span style={{color:"#94a3b8",fontFamily:"monospace"}}>{r["Subordem"]||"—"}</span></div>
-                          <div><span style={{color:"#64748b"}}>Estado: </span><span style={{color:"#e2e8f0"}}>{r["Estado Progest"]||"—"}</span></div>
-                          <div><span style={{color:"#64748b"}}>OT Estado: </span><span style={{color:r["Estado Ordem de Trabalho"]==="Pendente"?"#f59e0b":r["Estado Ordem de Trabalho"]==="Suspensa"?"#dc2626":"#10b981"}}>{r["Estado Ordem de Trabalho"]||"—"}</span></div>
-                          <div><span style={{color:"#64748b"}}>📍 </span><span style={{color:"#94a3b8"}}>{r["Concelho"]||"—"}</span></div>
-                          <div><span style={{color:"#64748b"}}>PSE: </span><span style={{color:"#94a3b8"}}>{r["PSE"]||"—"}</span></div>
-                          <div><span style={{color:"#64748b"}}>Adjudicação: </span><span style={{color:"#94a3b8"}}>{r["Adjudicação"]||"—"}</span></div>
-                          <div><span style={{color:"#64748b"}}>Data Fim: </span><span style={{color:"#94a3b8"}}>{r["Data Base Fim"]?fmtD(r["Data Base Fim"]):"—"}</span></div>
-                        </div>
-                        {(r["Planeado MO €"]||r["Realizado MO €"])&&(
-                          <div style={{display:"flex",gap:8,marginTop:6,fontSize:9,color:"#64748b",borderTop:"1px solid #334155",paddingTop:4}}>
-                            <span>MO Plan: {r["Planeado MO €"]||0}€</span>
-                            <span>MO Real: {r["Realizado MO €"]||0}€</span>
-                            <span>Mat Plan: {r["Planeado Mat. €"]||0}€</span>
-                            <span>Mat Real: {r["Realizado Mat. €"]||0}€</span>
+                        <div style={{fontSize:11,color:"#e2e8f0",marginBottom:4}}>{designacao||"—"}</div>
+                        {estadoOpExec&&(
+                          <div style={{background:"#f59e0b15",border:"1px solid #f59e0b30",borderRadius:5,padding:"4px 8px",marginBottom:6,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                            <span style={{fontSize:10,fontWeight:600,color:"#f59e0b"}}>⚙️ {estadoOpExec}</span>
+                            {diasOpExec&&diasOpExec!=="0"&&<span style={{fontSize:9,color:"#f59e0b"}}>({diasOpExec} dias)</span>}
                           </div>
                         )}
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,fontSize:10}}>
+                          <div><span style={{color:"#64748b"}}>DP: </span><span style={{color:"#f59e0b",fontFamily:"monospace"}}>{dp||"—"}</span></div>
+                          <div><span style={{color:"#64748b"}}>OT: </span><span style={{color:"#94a3b8",fontFamily:"monospace"}}>{subordem||"—"}</span></div>
+                          <div><span style={{color:"#64748b"}}>Estado: </span><span style={{color:"#e2e8f0"}}>{estadoP||"—"}</span></div>
+                          <div><span style={{color:"#64748b"}}>OT Estado: </span><span style={{color:estadoOT==="Pendente"?"#f59e0b":estadoOT==="Suspensa"?"#dc2626":"#10b981"}}>{estadoOT||"—"}</span></div>
+                          <div><span style={{color:"#64748b"}}>📍 </span><span style={{color:"#94a3b8"}}>{concelho||"—"}</span></div>
+                          <div><span style={{color:"#64748b"}}>PSE: </span><span style={{color:"#94a3b8"}}>{pse||"—"}</span></div>
+                          <div><span style={{color:"#64748b"}}>Adjudicação: </span><span style={{color:"#94a3b8"}}>{adjudicacao||"—"}</span></div>
+                          <div><span style={{color:"#64748b"}}>Data Fim: </span><span style={{color:"#94a3b8"}}>{dataFim?fmtD(dataFim):"—"}</span></div>
+                        </div>
                       </WBox>
                     );
                   })}
