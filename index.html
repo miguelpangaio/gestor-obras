@@ -1216,9 +1216,10 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,onUpdateMeta}) {
       </div>
 
       <div style={{padding:"12px 20px 28px"}}>
-        {!result&&!estado&&(<div style={{textAlign:"center",padding:"50px 16px",color:"#64748b"}}><div style={{fontSize:48,marginBottom:12}}>📊</div><div style={{fontSize:14,fontWeight:600,color:"#94a3b8"}}>Carrega o teu Excel diário</div><div style={{fontSize:11,marginTop:6,color:"#475569",maxWidth:280,margin:"6px auto 0"}}>Seleciona o ficheiro CP_ListaExecução. A análise compara automaticamente com o dia anterior.</div>
+        {!result&&!rows&&dbReady&&(<div style={{textAlign:"center",padding:"50px 16px",color:"#64748b"}}><div style={{fontSize:48,marginBottom:12}}>📊</div><div style={{fontSize:14,fontWeight:600,color:"#94a3b8"}}>Carrega o teu Excel diário</div><div style={{fontSize:11,marginTop:6,color:"#475569",maxWidth:280,margin:"6px auto 0"}}>Seleciona o ficheiro CP_ListaExecução. A análise compara automaticamente com o dia anterior.</div>
           <button onClick={()=>fileRef.current&&fileRef.current.click()} style={{marginTop:16,padding:"10px 24px",borderRadius:8,border:"2px solid #10b981",background:"transparent",color:"#10b981",fontSize:12,fontWeight:700,cursor:"pointer"}}>📂 Selecionar ficheiro</button>
         </div>)}
+        {!dbReady&&!result&&(<div style={{textAlign:"center",padding:"50px 16px",color:"#64748b"}}><div style={{fontSize:12}}>A carregar dados...</div></div>)}
 
         {result&&(<div>
           {/* Search */}
