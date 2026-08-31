@@ -37,40 +37,6 @@ window.dataStore={
   load:function(c,cb){var cached=null;try{var r=localStorage.getItem('go-'+c);if(r)cached=JSON.parse(r);}catch(e){}if(cached)cb(cached);db.collection('userData').doc(c).get().then(function(doc){if(doc.exists){var d=JSON.parse(doc.data().data);try{localStorage.setItem('go-'+c,JSON.stringify(d));}catch(e){}cb(d);}else if(!cached){cb([]);}}).catch(function(e){if(!cached)cb([]);});},
   listen:function(c,cb){return db.collection('userData').doc(c).onSnapshot(function(doc){if(doc.exists){var d=JSON.parse(doc.data().data);try{localStorage.setItem('go-'+c,JSON.stringify(d));}catch(e){}cb(d);}},function(e){console.warn(e);});}
 };
-// IndexedDB para dados grandes (Excel)
-window.excelDB={
-  _db:null,
-  open:function(){
-    var self=this;
-    return new Promise(function(resolve,reject){
-      if(self._db){resolve(self._db);return;}
-      var req=indexedDB.open('GestorObrasExcel',1);
-      req.onupgradeneeded=function(e){e.target.result.createObjectStore('excel');};
-      req.onsuccess=function(e){self._db=e.target.result;resolve(self._db);};
-      req.onerror=function(e){reject(e);};
-    });
-  },
-  save:function(key,data){
-    return this.open().then(function(db){
-      return new Promise(function(resolve,reject){
-        var tx=db.transaction('excel','readwrite');
-        tx.objectStore('excel').put(data,key);
-        tx.oncomplete=function(){resolve(true);};
-        tx.onerror=function(e){reject(e);};
-      });
-    });
-  },
-  load:function(key){
-    return this.open().then(function(db){
-      return new Promise(function(resolve,reject){
-        var tx=db.transaction('excel','readonly');
-        var req=tx.objectStore('excel').get(key);
-        req.onsuccess=function(){resolve(req.result||null);};
-        req.onerror=function(e){reject(e);};
-      });
-    });
-  }
-};
 </script>
 <script type="text/babel">
 const {useState,useEffect,useCallback,useMemo,useRef} = React;
@@ -1082,128 +1048,142 @@ function AnalisePage({onBack}) {
 }
 
 /* ── EXCEL ANALYSIS ── */
-function parseExcel(file) {
-  return new Promise((resolve,reject)=>{
+const EXCEL_COLS=["Nº de Processo de Origem","Tipo de Processo","Definição do Projeto","Subordem","Designação Subordem","Data Compromisso","Estado Sistema","Estado Progest","PSE","Concelho","Adjudicação","Última Atualização Ordem","Estado Operacional Execução"];
+
+function parseExcel(file){
+  return new Promise((res,rej)=>{
     const reader=new FileReader();
-    reader.onload=(e)=>{
-      try {
-        const wb=XLSX.read(e.target.result,{type:"array",cellDates:true});
-        const ws=wb.Sheets[wb.SheetNames[0]];
-        const data=XLSX.utils.sheet_to_json(ws,{defval:""});
-        resolve(data);
-      } catch(err){reject(err);}
-    };
-    reader.onerror=reject;
-    reader.readAsArrayBuffer(file);
+    reader.onload=(e)=>{try{const wb=XLSX.read(e.target.result,{type:"array",cellDates:true});const ws=wb.Sheets[wb.SheetNames[0]];const data=XLSX.utils.sheet_to_json(ws,{defval:""});res(data);}catch(err){rej(err);}};
+    reader.onerror=rej;reader.readAsArrayBuffer(file);
   });
 }
 
-function ExcelAnalise({onBack,historico,onUpdateHistorico,onUpdateMeta}) {
-  const [loading,setLoading]=useState(false);const [result,setResult]=useState(null);const [tab,setTab]=useState("resumo");
-  const [search,setSearch]=useState("");const [searchResults,setSearchResults]=useState([]);
-  const [rows,setRows]=useState(null);const [meta,setMeta]=useState(null);const [dbReady,setDbReady]=useState(false);
+function slimRow(r){
+  const keys=Object.keys(r);
+  const find=(terms)=>keys.find(k=>{const kl=k.toLowerCase();return terms.some(t=>kl.includes(t.toLowerCase()));});
+  return {
+    proc:String(r[find(["Processo de Origem","processo"])]||""),
+    tipo:String(r[find(["Tipo de Processo","Tipo Processo"])]||""),
+    dp:String(r[find(["Defini"])]||""),
+    ot:String(r[find(["Subordem"])]||""),
+    dsg:String(r[find(["Designa"])]||""),
+    dc:String(r[find(["Data Compromisso"])]||""),
+    es:String(r[find(["Estado Sistema"])]||""),
+    ep:String(r[find(["Estado Progest"])]||""),
+    pse:String(r[find(["PSE"])]||""),
+    conc:String(r[find(["Concelho"])]||""),
+    adj:String(r[find(["Adjudica"])]||""),
+    ua:String(r[find(["ltima Atualiza"])]||""),
+    eoe:String(r[find(["Estado Operacional Exec","Operacional"])]||"")
+  };
+}
+
+function excelSave(key,data){try{localStorage.setItem("excel_"+key,JSON.stringify(data));}catch(e){console.warn("Excel save failed",e);}}
+function excelLoad(key){try{const d=localStorage.getItem("excel_"+key);return d?JSON.parse(d):null;}catch(e){return null;}}
+
+function ExcelAnalise({onBack,historico,onUpdateHistorico,onUpdateMeta}){
+  const [loading,setLoading]=useState(false);
+  const [result,setResult]=useState(null);
+  const [tab,setTab]=useState("resumo");
+  const [search,setSearch]=useState("");
+  const [searchResults,setSearchResults]=useState([]);
+  const [rows,setRows]=useState(null);
+  const [meta,setMeta]=useState(null);
   const fileRef=useRef(null);
 
-  // Carregar dados do IndexedDB ao abrir
   useEffect(()=>{
-    let cancelled=false;
-    Promise.all([window.excelDB.load("rows"),window.excelDB.load("meta")]).then(([savedRows,savedMeta])=>{
-      if(cancelled)return;
-      if(savedRows&&savedRows.length>0){
-        setRows(savedRows);
-        setMeta(savedMeta);
-        const analysis=analyzeRows(savedRows,null);
-        setResult(analysis);
-      }
-      setDbReady(true);
-    }).catch(()=>setDbReady(true));
-    return ()=>{cancelled=true;};
+    const saved=excelLoad("rows");
+    const savedMeta=excelLoad("meta");
+    if(saved&&saved.length>0){
+      setRows(saved);
+      setMeta(savedMeta);
+      setResult(doAnalyze(saved,null));
+    }
   },[]);
 
-  // Análise a partir de linhas de dados
-  const analyzeRows=(data,prevData)=>{
-    const res={totais:{},estados:{},estadosOT:{},concelhos:{},novas:[],removidas:[],mudancas:[],alertas:[]};
-    const allKeys=data.length>0?Object.keys(data[0]):[];
-    const f=(...terms)=>allKeys.find(c=>{const cl=c.toLowerCase();return terms.some(t=>cl.includes(t.toLowerCase()));});
-    const COL={proc:f("Processo de Origem","processo"),dp:f("Defini"),sub:f("Subordem"),dsg:f("Designa"),ep:f("Estado Progest"),eot:f("Estado Ordem"),eoe:f("Estado Operacional Exec"),doe:f("Dias Est"),conc:f("Concelho"),ua:f("ltima Atualiza"),pse:f("PSE"),adj:f("Adjudica"),df:f("Data Base Fim","Data Fim"),tp:f("Tipo de Processo","Tipo Processo")};
-    const gv=(r,col)=>(col&&r[col]!=null)?String(r[col]):"";
-    const key=r=>gv(r,COL.proc)+"_"+gv(r,COL.dp)+"_"+gv(r,COL.sub);
-
-    res.totais.total=data.length;
-    res.totais.processos=new Set(data.map(r=>gv(r,COL.proc)).filter(Boolean)).size;
-    res.totais.dps=new Set(data.map(r=>gv(r,COL.dp)).filter(Boolean)).size;
-    data.forEach(r=>{const e=gv(r,COL.ep)||"Sem estado";res.estados[e]=(res.estados[e]||0)+1;});
-    data.forEach(r=>{const e=gv(r,COL.eot)||"Sem estado";res.estadosOT[e]=(res.estadosOT[e]||0)+1;});
-    data.forEach(r=>{const c=gv(r,COL.conc)||"Sem concelho";res.concelhos[c]=(res.concelhos[c]||0)+1;});
-    
+  const doAnalyze=(data,prev)=>{
+    const r={totais:{},estados:{},estadosOT:{},concelhos:{},novas:[],removidas:[],mudancas:[],alertas:[]};
+    r.totais.total=data.length;
+    r.totais.processos=new Set(data.map(x=>x.proc).filter(Boolean)).size;
+    r.totais.dps=new Set(data.map(x=>x.dp).filter(Boolean)).size;
+    data.forEach(x=>{const e=x.ep||"Sem estado";r.estados[e]=(r.estados[e]||0)+1;});
+    data.forEach(x=>{const e=x.eoe||"Sem estado";r.estadosOT[e]=(r.estadosOT[e]||0)+1;});
+    data.forEach(x=>{const c=x.conc||"Sem concelho";r.concelhos[c]=(r.concelhos[c]||0)+1;});
     const hoje=new Date();
-    data.forEach(r=>{
-      const ua=COL.ua?r[COL.ua]:null;
-      if(ua){const d=new Date(ua);const dias=Math.floor((hoje-d)/86400000);
-        if(dias>5&&gv(r,COL.eot).toLowerCase()==="pendente"){
-          res.alertas.push({processo:gv(r,COL.proc),dp:gv(r,COL.dp),designacao:gv(r,COL.dsg),dias,estado:gv(r,COL.ep),concelho:gv(r,COL.conc)});
-        }}});
-    res.alertas.sort((a,b)=>b.dias-a.dias);
-
-    if(prevData&&prevData.length>0){
-      const pKeys=prevData.length>0?Object.keys(prevData[0]):allKeys;
-      const pf=(...terms)=>pKeys.find(c=>{const cl=c.toLowerCase();return terms.some(t=>cl.includes(t.toLowerCase()));});
-      const PC={proc:pf("Processo de Origem","processo"),dp:pf("Defini"),sub:pf("Subordem"),dsg:pf("Designa"),ep:pf("Estado Progest"),eot:pf("Estado Ordem")};
-      const pgv=(r,col)=>(col&&r[col]!=null)?String(r[col]):"";
-      const pkey=r=>pgv(r,PC.proc)+"_"+pgv(r,PC.dp)+"_"+pgv(r,PC.sub);
-      const prevMap=new Map();prevData.forEach(r=>prevMap.set(pkey(r),r));
-      const currMap=new Map();data.forEach(r=>currMap.set(key(r),r));
-      data.forEach(r=>{if(!prevMap.has(key(r)))res.novas.push({processo:gv(r,COL.proc),dp:gv(r,COL.dp),designacao:gv(r,COL.dsg),estado:gv(r,COL.ep),concelho:gv(r,COL.conc)});});
-      prevData.forEach(r=>{if(!currMap.has(pkey(r)))res.removidas.push({processo:pgv(r,PC.proc),dp:pgv(r,PC.dp),designacao:pgv(r,PC.dsg),estado:pgv(r,PC.ep)});});
-      data.forEach(r=>{const prev=prevMap.get(key(r));if(prev){
-        const ce=gv(r,COL.ep),pe=pgv(prev,PC.ep);if(pe&&ce&&pe!==ce)res.mudancas.push({tipo:"estado_progest",processo:gv(r,COL.proc),dp:gv(r,COL.dp),de:pe,para:ce,designacao:gv(r,COL.dsg)});
-        const ceo=gv(r,COL.eot),peo=pgv(prev,PC.eot);if(peo&&ceo&&peo!==ceo)res.mudancas.push({tipo:"estado_ot",processo:gv(r,COL.proc),dp:gv(r,COL.dp),de:peo,para:ceo,designacao:gv(r,COL.dsg)});
+    data.forEach(x=>{if(x.ua){const d=new Date(x.ua);const dias=Math.floor((hoje-d)/86400000);if(dias>5&&x.eoe&&x.eoe.toLowerCase().includes("pend")){r.alertas.push({proc:x.proc,dp:x.dp,dsg:x.dsg,dias,ep:x.ep,conc:x.conc,eoe:x.eoe});}}});
+    r.alertas.sort((a,b)=>b.dias-a.dias);
+    if(prev&&prev.length>0){
+      const pMap=new Map();prev.forEach(x=>pMap.set(x.proc+"_"+x.dp+"_"+x.ot,x));
+      const cMap=new Map();data.forEach(x=>cMap.set(x.proc+"_"+x.dp+"_"+x.ot,x));
+      data.forEach(x=>{const k=x.proc+"_"+x.dp+"_"+x.ot;if(!pMap.has(k))r.novas.push(x);});
+      prev.forEach(x=>{const k=x.proc+"_"+x.dp+"_"+x.ot;if(!cMap.has(k))r.removidas.push(x);});
+      data.forEach(x=>{const k=x.proc+"_"+x.dp+"_"+x.ot;const p=pMap.get(k);if(p){
+        if(p.ep&&x.ep&&p.ep!==x.ep)r.mudancas.push({tipo:"progest",proc:x.proc,dp:x.dp,dsg:x.dsg,de:p.ep,para:x.ep});
+        if(p.eoe&&x.eoe&&p.eoe!==x.eoe)r.mudancas.push({tipo:"operacional",proc:x.proc,dp:x.dp,dsg:x.dsg,de:p.eoe,para:x.eoe});
       }});
     }
-    return res;
+    return r;
   };
 
   const handleFile=async(e)=>{
     const file=e.target.files[0];if(!file)return;
     setLoading(true);
-    try {
-      const newRows=await parseExcel(file);
-      const prevRows=rows;
-      const analysis=analyzeRows(newRows,prevRows);
-      
-      // Guardar no IndexedDB (suporta centenas de MB)
-      await window.excelDB.save("rows",newRows);
-      const newMeta={d:new Date().toISOString(),f:file.name,total:newRows.length};
-      await window.excelDB.save("meta",newMeta);
-      
-      setRows(newRows);
-      setMeta(newMeta);
-      setResult(analysis);
-      setTab("resumo");
+    try{
+      const raw=await parseExcel(file);
+      const slim=raw.map(slimRow);
+      const prev=rows;
+      const analysis=doAnalyze(slim,prev);
+      excelSave("rows",slim);
+      const newMeta={d:new Date().toISOString(),f:file.name,total:slim.length};
+      excelSave("meta",newMeta);
+      setRows(slim);setMeta(newMeta);setResult(analysis);setTab("resumo");
       onUpdateMeta(newMeta);
-
-      // Histórico (pequeno, vai pro Firebase)
-      const entry={data:new Date().toISOString(),ficheiro:file.name,total:newRows.length,novas:analysis.novas.length,removidas:analysis.removidas.length,mudancas:analysis.mudancas.length,alertas:analysis.alertas.length};
+      const entry={data:new Date().toISOString(),ficheiro:file.name,total:slim.length,novas:analysis.novas.length,removidas:analysis.removidas.length,mudancas:analysis.mudancas.length,alertas:analysis.alertas.length};
       onUpdateHistorico([entry,...(historico||[]).slice(0,29)]);
-    } catch(err){alert("Erro ao ler ficheiro: "+err.message);}
+    }catch(err){alert("Erro: "+err.message);}
     setLoading(false);
     if(fileRef.current)fileRef.current.value="";
   };
 
   const doSearch=(q)=>{
     setSearch(q);
-    if(!q.trim()||!rows||rows.length===0){setSearchResults([]);return;}
+    if(!q.trim()||!rows){setSearchResults([]);return;}
     const s=q.trim().toLowerCase();
-    const found=rows.filter(r=>Object.values(r).some(v=>v!=null&&String(v).toLowerCase().includes(s)));
-    setSearchResults(found);
+    setSearchResults(rows.filter(r=>Object.values(r).some(v=>v&&v.toLowerCase().includes(s))));
   };
 
-  const tabBtn=(k,label,icon,count)=>{
-    const active=tab===k;
-    return (<button key={k} onClick={()=>setTab(k)} style={{padding:"6px 10px",borderRadius:6,border:"1px solid "+(active?"#10b981":"#334155"),background:active?"#10b98120":"transparent",color:active?"#10b981":"#94a3b8",fontSize:10,fontWeight:active?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>{icon} {label}{count!==undefined&&<span style={{background:count>0?(active?"#10b981":"#475569"):"#334155",color:count>0?"#fff":"#64748b",padding:"0 5px",borderRadius:8,fontSize:9,fontWeight:700}}>{count}</span>}</button>);
+  const TB=(k,label,icon,count)=>{const a=tab===k;return(<button key={k} onClick={()=>setTab(k)} style={{padding:"6px 10px",borderRadius:6,border:"1px solid "+(a?"#10b981":"#334155"),background:a?"#10b98120":"transparent",color:a?"#10b981":"#94a3b8",fontSize:10,fontWeight:a?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>{icon} {label}{count!==undefined&&<span style={{background:count>0?"#475569":"#334155",color:count>0?"#fff":"#64748b",padding:"0 5px",borderRadius:8,fontSize:9,fontWeight:700}}>{count}</span>}</button>);};
+
+  const Card=({r,i})=>{
+    const isPLR=r.proc.startsWith("9")||r.proc.startsWith("8");
+    const ac=isPLR?"#16a34a":"#3b82f6";
+    const diasAtt=r.ua?Math.floor((new Date()-new Date(r.ua))/86400000):null;
+    return(<WBox key={i} style={{padding:12,borderLeft:"3px solid "+ac,marginBottom:6}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontSize:11}}>{isPLR?"⚡":"🏗️"}</span>
+          <span style={{fontSize:12,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{r.proc}</span>
+          <span style={{fontSize:9,background:ac+"20",color:ac,padding:"1px 5px",borderRadius:3,fontWeight:600}}>{isPLR?"PLR":"RP"}</span>
+          {r.tipo&&<span style={{fontSize:9,background:"#47556920",color:"#94a3b8",padding:"1px 5px",borderRadius:3}}>{r.tipo}</span>}
+        </div>
+        {diasAtt>0&&diasAtt<9999&&<span style={{fontSize:9,color:diasAtt>10?"#f59e0b":"#64748b"}}>att: {diasAtt}d</span>}
+      </div>
+      <div style={{fontSize:11,color:"#e2e8f0",marginBottom:4}}>{r.dsg||"—"}</div>
+      {r.eoe&&<div style={{background:"#f59e0b15",border:"1px solid #f59e0b30",borderRadius:5,padding:"4px 8px",marginBottom:5}}><span style={{fontSize:10,fontWeight:600,color:"#f59e0b"}}>⚙️ {r.eoe}</span></div>}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,fontSize:10}}>
+        <div><span style={{color:"#64748b"}}>DP: </span><span style={{color:"#f59e0b",fontFamily:"monospace"}}>{r.dp||"—"}</span></div>
+        <div><span style={{color:"#64748b"}}>OT: </span><span style={{color:"#94a3b8",fontFamily:"monospace"}}>{r.ot||"—"}</span></div>
+        <div><span style={{color:"#64748b"}}>Estado: </span><span style={{color:"#e2e8f0"}}>{r.ep||"—"}</span></div>
+        <div><span style={{color:"#64748b"}}>📍 </span><span style={{color:"#94a3b8"}}>{r.conc||"—"}</span></div>
+        <div><span style={{color:"#64748b"}}>PSE: </span><span style={{color:"#94a3b8"}}>{r.pse||"—"}</span></div>
+        <div><span style={{color:"#64748b"}}>Adjudicação: </span><span style={{color:"#94a3b8"}}>{r.adj||"—"}</span></div>
+        <div><span style={{color:"#64748b"}}>Data Comp.: </span><span style={{color:"#94a3b8"}}>{r.dc?fmtD(r.dc):"—"}</span></div>
+        <div><span style={{color:"#64748b"}}>Últ. Att.: </span><span style={{color:"#94a3b8"}}>{r.ua?fmtD(r.ua):"—"}</span></div>
+      </div>
+    </WBox>);
   };
 
-  return (
+  return(
     <div style={{minHeight:"100vh",background:"#0f172a"}}>
       <div style={{background:"linear-gradient(135deg,#065f46,#10b981)",padding:"14px 24px 18px"}}>
         <BackBtn onClick={onBack} label="Início"/>
@@ -1211,233 +1191,120 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,onUpdateMeta}) {
           <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:20}}>📊</span><h1 style={{fontSize:17,fontWeight:800,color:"#fff",margin:0}}>Análise Excel</h1></div>
           <button onClick={()=>fileRef.current&&fileRef.current.click()} disabled={loading} style={{padding:"6px 12px",borderRadius:5,border:"none",background:"rgba(255,255,255,.18)",color:"#fff",fontWeight:700,fontSize:11,cursor:loading?"wait":"pointer"}}>{loading?"A analisar...":"📂 Carregar Excel"}</button>
         </div>
-        {meta&&<div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:4}}>Último upload: {meta.f} ({fmtD(meta.d)}) · Carrega novo Excel para ver alterações</div>}
+        {meta&&<div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:4}}>Último: {meta.f} ({fmtD(meta.d)}) · {meta.total} registos</div>}
         <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={handleFile} style={{display:"none"}}/>
       </div>
-
       <div style={{padding:"12px 20px 28px"}}>
-        {!result&&!rows&&dbReady&&(<div style={{textAlign:"center",padding:"50px 16px",color:"#64748b"}}><div style={{fontSize:48,marginBottom:12}}>📊</div><div style={{fontSize:14,fontWeight:600,color:"#94a3b8"}}>Carrega o teu Excel diário</div><div style={{fontSize:11,marginTop:6,color:"#475569",maxWidth:280,margin:"6px auto 0"}}>Seleciona o ficheiro CP_ListaExecução. A análise compara automaticamente com o dia anterior.</div>
+        {!result&&(<div style={{textAlign:"center",padding:"50px 16px",color:"#64748b"}}><div style={{fontSize:48,marginBottom:12}}>📊</div><div style={{fontSize:14,fontWeight:600,color:"#94a3b8"}}>Carrega o teu Excel diário</div><div style={{fontSize:11,marginTop:6,color:"#475569",maxWidth:280,margin:"6px auto 0"}}>Seleciona o ficheiro CP_ListaExecução.</div>
           <button onClick={()=>fileRef.current&&fileRef.current.click()} style={{marginTop:16,padding:"10px 24px",borderRadius:8,border:"2px solid #10b981",background:"transparent",color:"#10b981",fontSize:12,fontWeight:700,cursor:"pointer"}}>📂 Selecionar ficheiro</button>
         </div>)}
-        {!dbReady&&!result&&(<div style={{textAlign:"center",padding:"50px 16px",color:"#64748b"}}><div style={{fontSize:12}}>A carregar dados...</div></div>)}
 
         {result&&(<div>
-          {/* Search */}
-          <div style={{marginBottom:10}}>
-            <div style={{display:"flex",gap:6}}>
-              <input style={{flex:1,padding:"8px 10px",borderRadius:6,border:"1px solid #334155",background:"#1e293b",color:"#e2e8f0",fontSize:12,outline:"none"}} placeholder="🔍 Pesquisar PLR, RP, OT, DP, concelho..." value={search} onChange={e=>{doSearch(e.target.value);if(e.target.value.trim())setTab("pesquisa");}}/>
-              {search&&<button onClick={()=>{setSearch("");setSearchResults([]);setTab("resumo");}} style={{padding:"6px 10px",borderRadius:6,border:"1px solid #334155",background:"#1e293b",color:"#94a3b8",fontSize:11,cursor:"pointer"}}>✕</button>}
-            </div>
-          </div>
+          <div style={{marginBottom:10}}><div style={{display:"flex",gap:6}}>
+            <input style={{flex:1,padding:"8px 10px",borderRadius:6,border:"1px solid #334155",background:"#1e293b",color:"#e2e8f0",fontSize:12,outline:"none"}} placeholder="🔍 Pesquisar PLR, RP, DP, concelho..." value={search} onChange={e=>{doSearch(e.target.value);if(e.target.value.trim())setTab("pesquisa");}}/>
+            {search&&<button onClick={()=>{setSearch("");setSearchResults([]);setTab("resumo");}} style={{padding:"6px 10px",borderRadius:6,border:"1px solid #334155",background:"#1e293b",color:"#94a3b8",fontSize:11,cursor:"pointer"}}>✕</button>}
+          </div></div>
 
-          {/* Tabs */}
           <div style={{display:"flex",gap:4,marginBottom:12,flexWrap:"wrap"}}>
-            {tabBtn("resumo","Resumo","📋")}
-            {tabBtn("mudancas","Alterações","🔄",result.mudancas.length)}
-            {tabBtn("novas","Novas","🆕",result.novas.length)}
-            {tabBtn("alertas","Alertas","⚠️",result.alertas.length)}
-            {tabBtn("pesquisa","Pesquisa","🔍",search?searchResults.length:undefined)}
-            {tabBtn("historico","Histórico","📅")}
+            {TB("resumo","Resumo","📋")}{TB("mudancas","Alterações","🔄",result.mudancas.length)}{TB("novas","Novas","🆕",result.novas.length)}{TB("alertas","Alertas","⚠️",result.alertas.length)}{TB("pesquisa","Pesquisa","🔍",search?searchResults.length:undefined)}{TB("historico","Histórico","📅")}
           </div>
 
-          {/* Resumo */}
           {tab==="resumo"&&(<div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12}}>
               {[{n:result.totais.total,l:"Registos",c:"#3b82f6"},{n:result.totais.processos,l:"Processos",c:"#8b5cf6"},{n:result.totais.dps,l:"DPs",c:"#f59e0b"},{n:result.novas.length,l:"Novas",c:"#10b981"},{n:result.mudancas.length,l:"Alterações",c:"#f97316"},{n:result.alertas.length,l:"Alertas",c:result.alertas.length>0?"#dc2626":"#64748b"}].map((k,i)=>(
-                <div key={i} style={{background:"#1e293b",borderRadius:8,padding:"10px 10px",border:"1px solid #334155",textAlign:"center"}}>
+                <div key={i} style={{background:"#1e293b",borderRadius:8,padding:"10px",border:"1px solid #334155",textAlign:"center"}}>
                   <div style={{fontSize:22,fontWeight:800,color:k.c}}>{k.n}</div>
-                  <div style={{fontSize:9,color:"#64748b",fontWeight:500,marginTop:1}}>{k.l}</div>
-                </div>
-              ))}
+                  <div style={{fontSize:9,color:"#64748b",marginTop:1}}>{k.l}</div>
+                </div>))}
             </div>
-
-            <WBox style={{marginBottom:10}}>
-              <WTitle icon="📊" text="Estados Progest"/>
-              <div style={{display:"flex",flexDirection:"column",gap:3}}>
-                {Object.entries(result.estados).sort((a,b)=>b[1]-a[1]).map(([e,c])=>(
-                  <div key={e} style={{display:"flex",alignItems:"center",gap:8}}>
-                    <div style={{flex:1,fontSize:11,color:"#e2e8f0",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{e}</div>
-                    <div style={{width:80,height:6,borderRadius:3,background:"#334155",flexShrink:0}}><div style={{height:6,borderRadius:3,background:"#10b981",width:Math.round(c/result.totais.total*100)+"%"}}/></div>
-                    <div style={{fontSize:11,fontWeight:700,color:"#10b981",minWidth:24,textAlign:"right"}}>{c}</div>
-                  </div>
-                ))}
-              </div>
-            </WBox>
-
-            <WBox style={{marginBottom:10}}>
-              <WTitle icon="📍" text="Por Concelho"/>
-              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                {Object.entries(result.concelhos).sort((a,b)=>b[1]-a[1]).map(([c,n])=>(
-                  <div key={c} style={{background:"#0f172a",padding:"6px 10px",borderRadius:6,border:"1px solid #334155"}}>
-                    <div style={{fontSize:11,fontWeight:700,color:"#fff"}}>{n}</div>
-                    <div style={{fontSize:9,color:"#64748b"}}>{c}</div>
-                  </div>
-                ))}
-              </div>
-            </WBox>
-
-            <WBox>
-              <WTitle icon="🔄" text="Estados OT"/>
-              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                {Object.entries(result.estadosOT).sort((a,b)=>b[1]-a[1]).map(([e,n])=>{
-                  const colors={"Pendente":"#f59e0b","Agendada":"#3b82f6","No Local":"#10b981","Suspensa":"#dc2626","Fechada":"#64748b"};
-                  return (<div key={e} style={{background:(colors[e]||"#64748b")+"15",padding:"6px 10px",borderRadius:6,border:"1px solid "+(colors[e]||"#64748b")+"30"}}>
-                    <div style={{fontSize:14,fontWeight:800,color:colors[e]||"#94a3b8"}}>{n}</div>
-                    <div style={{fontSize:9,color:colors[e]||"#64748b"}}>{e}</div>
-                  </div>);
-                })}
-              </div>
-            </WBox>
+            <WBox style={{marginBottom:10}}><WTitle icon="📊" text="Estados Progest"/><div style={{display:"flex",flexDirection:"column",gap:3}}>
+              {Object.entries(result.estados).sort((a,b)=>b[1]-a[1]).map(([e,c])=>(<div key={e} style={{display:"flex",alignItems:"center",gap:8}}>
+                <div style={{flex:1,fontSize:11,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e}</div>
+                <div style={{width:80,height:6,borderRadius:3,background:"#334155",flexShrink:0}}><div style={{height:6,borderRadius:3,background:"#10b981",width:Math.round(c/result.totais.total*100)+"%"}}/></div>
+                <div style={{fontSize:11,fontWeight:700,color:"#10b981",minWidth:24,textAlign:"right"}}>{c}</div>
+              </div>))}
+            </div></WBox>
+            <WBox style={{marginBottom:10}}><WTitle icon="⚙️" text="Estado Operacional Execução"/><div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+              {Object.entries(result.estadosOT).sort((a,b)=>b[1]-a[1]).map(([e,n])=>(<div key={e} style={{background:"#0f172a",padding:"6px 10px",borderRadius:6,border:"1px solid #334155"}}>
+                <div style={{fontSize:11,fontWeight:700,color:"#fff"}}>{n}</div><div style={{fontSize:9,color:"#64748b"}}>{e}</div>
+              </div>))}
+            </div></WBox>
+            <WBox><WTitle icon="📍" text="Por Concelho"/><div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+              {Object.entries(result.concelhos).sort((a,b)=>b[1]-a[1]).map(([c,n])=>(<div key={c} style={{background:"#0f172a",padding:"6px 10px",borderRadius:6,border:"1px solid #334155"}}>
+                <div style={{fontSize:11,fontWeight:700,color:"#fff"}}>{n}</div><div style={{fontSize:9,color:"#64748b"}}>{c}</div>
+              </div>))}
+            </div></WBox>
           </div>)}
 
-          {/* Mudanças */}
           {tab==="mudancas"&&(<div>
-            {result.mudancas.length===0?(<WBox><div style={{textAlign:"center",padding:16,color:"#64748b"}}><div style={{fontSize:24,marginBottom:6}}>✅</div><div style={{fontSize:11}}>Sem alterações de estado</div></div></WBox>):(
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {result.mudancas.map((m,i)=>(
-                  <WBox key={i} style={{padding:10}}>
-                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
-                      <span style={{fontSize:12}}>{m.tipo==="estado_progest"?"📊":"🔧"}</span>
-                      <span style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{m.processo}</span>
-                      <span style={{fontSize:9,color:"#64748b"}}>{m.dp}</span>
-                    </div>
-                    <div style={{fontSize:10,color:"#94a3b8",marginBottom:3}}>{m.designacao}</div>
-                    <div style={{display:"flex",alignItems:"center",gap:6,fontSize:10}}>
-                      <span style={{color:"#f87171",background:"#dc262615",padding:"2px 6px",borderRadius:4}}>{m.de||"(vazio)"}</span>
-                      <span style={{color:"#64748b"}}>→</span>
-                      <span style={{color:"#34d399",background:"#10b98115",padding:"2px 6px",borderRadius:4}}>{m.para||"(vazio)"}</span>
-                    </div>
-                  </WBox>
-                ))}
-              </div>
+            {result.mudancas.length===0?(<WBox><div style={{textAlign:"center",padding:16,color:"#64748b"}}>✅ Sem alterações de estado</div></WBox>):(
+              result.mudancas.map((m,i)=>(<WBox key={i} style={{padding:10,marginBottom:6}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                  <span style={{fontSize:11}}>{m.tipo==="progest"?"📊":"⚙️"}</span>
+                  <span style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{m.proc}</span>
+                  <span style={{fontSize:9,color:"#64748b"}}>{m.dp}</span>
+                </div>
+                <div style={{fontSize:10,color:"#94a3b8",marginBottom:3}}>{m.dsg}</div>
+                <div style={{display:"flex",alignItems:"center",gap:6,fontSize:10}}>
+                  <span style={{color:"#f87171",background:"#dc262615",padding:"2px 6px",borderRadius:4}}>{m.de}</span>
+                  <span style={{color:"#64748b"}}>→</span>
+                  <span style={{color:"#34d399",background:"#10b98115",padding:"2px 6px",borderRadius:4}}>{m.para}</span>
+                </div>
+              </WBox>))
             )}
           </div>)}
 
-          {/* Novas */}
           {tab==="novas"&&(<div>
-            {result.novas.length===0&&result.removidas.length===0?(<WBox><div style={{textAlign:"center",padding:16,color:"#64748b"}}><div style={{fontSize:24,marginBottom:6}}>📋</div><div style={{fontSize:11}}>Sem entradas novas ou removidas</div></div></WBox>):(
+            {result.novas.length===0&&result.removidas.length===0?(<WBox><div style={{textAlign:"center",padding:16,color:"#64748b"}}>📋 Sem entradas novas ou removidas</div></WBox>):(
               <div>
-                {result.novas.length>0&&(<div style={{marginBottom:12}}><div style={{fontSize:12,fontWeight:700,color:"#10b981",marginBottom:6}}>🆕 Novas ({result.novas.length})</div>
-                  {result.novas.map((n,i)=>(<WBox key={i} style={{padding:10,marginBottom:6}}>
-                    <div style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{n.processo} <span style={{color:"#64748b",fontWeight:400}}>{n.dp}</span></div>
-                    <div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>{n.designacao}</div>
-                    <div style={{display:"flex",gap:6,marginTop:3,fontSize:9,color:"#64748b"}}><span>{n.estado}</span><span>📍 {n.concelho}</span></div>
-                  </WBox>))}
-                </div>)}
-                {result.removidas.length>0&&(<div><div style={{fontSize:12,fontWeight:700,color:"#dc2626",marginBottom:6}}>🗑 Removidas ({result.removidas.length})</div>
-                  {result.removidas.map((n,i)=>(<WBox key={i} style={{padding:10,marginBottom:6,opacity:.6}}>
-                    <div style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{n.processo} <span style={{color:"#64748b",fontWeight:400}}>{n.dp}</span></div>
-                    <div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>{n.designacao}</div>
-                  </WBox>))}
-                </div>)}
+                {result.novas.length>0&&<div style={{fontSize:12,fontWeight:700,color:"#10b981",marginBottom:6}}>🆕 Novas ({result.novas.length})</div>}
+                {result.novas.map((r,i)=><Card key={"n"+i} r={r} i={i}/>)}
+                {result.removidas.length>0&&<div style={{fontSize:12,fontWeight:700,color:"#dc2626",marginTop:12,marginBottom:6}}>🗑 Removidas ({result.removidas.length})</div>}
+                {result.removidas.map((r,i)=><Card key={"r"+i} r={r} i={i}/>)}
               </div>
             )}
           </div>)}
 
-          {/* Alertas */}
           {tab==="alertas"&&(<div>
-            {result.alertas.length===0?(<WBox><div style={{textAlign:"center",padding:16,color:"#64748b"}}><div style={{fontSize:24,marginBottom:6}}>✅</div><div style={{fontSize:11}}>Sem OTs paradas há mais de 5 dias</div></div></WBox>):(
+            {result.alertas.length===0?(<WBox><div style={{textAlign:"center",padding:16,color:"#64748b"}}>✅ Sem alertas</div></WBox>):(
               <div>
-                <div style={{fontSize:10,color:"#f59e0b",marginBottom:8,fontWeight:600}}>⚠️ {result.alertas.length} OTs pendentes paradas há mais de 5 dias</div>
-                <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                  {result.alertas.map((a,i)=>(
-                    <WBox key={i} style={{padding:10,borderLeft:"3px solid "+(a.dias>15?"#dc2626":a.dias>10?"#f59e0b":"#f97316")}}>
-                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}>
-                        <span style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{a.processo}</span>
-                        <span style={{fontSize:10,fontWeight:700,color:a.dias>15?"#dc2626":"#f59e0b",background:a.dias>15?"#dc262615":"#f59e0b15",padding:"2px 6px",borderRadius:4}}>⏰ {a.dias} dias</span>
-                      </div>
-                      <div style={{fontSize:10,color:"#94a3b8"}}>{a.designacao}</div>
-                      <div style={{display:"flex",gap:8,marginTop:3,fontSize:9,color:"#64748b"}}><span>{a.dp}</span><span>📍 {a.concelho}</span><span>{a.estado}</span></div>
-                    </WBox>
-                  ))}
-                </div>
+                <div style={{fontSize:10,color:"#f59e0b",marginBottom:8,fontWeight:600}}>⚠️ {result.alertas.length} processos com estado operacional pendente há mais de 5 dias</div>
+                {result.alertas.map((a,i)=>(<WBox key={i} style={{padding:10,marginBottom:6,borderLeft:"3px solid "+(a.dias>15?"#dc2626":"#f59e0b")}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}>
+                    <span style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{a.proc}</span>
+                    <span style={{fontSize:10,fontWeight:700,color:a.dias>15?"#dc2626":"#f59e0b",background:a.dias>15?"#dc262615":"#f59e0b15",padding:"2px 6px",borderRadius:4}}>⏰ {a.dias} dias</span>
+                  </div>
+                  <div style={{fontSize:10,color:"#94a3b8"}}>{a.dsg}</div>
+                  <div style={{display:"flex",gap:8,marginTop:3,fontSize:9,color:"#64748b"}}><span>{a.dp}</span><span>📍 {a.conc}</span><span>{a.ep}</span><span>⚙️ {a.eoe}</span></div>
+                </WBox>))}
               </div>
             )}
           </div>)}
 
-          {/* Pesquisa */}
           {tab==="pesquisa"&&(<div>
-            {!search.trim()?(<WBox><div style={{textAlign:"center",padding:16,color:"#64748b"}}><div style={{fontSize:24,marginBottom:6}}>🔍</div><div style={{fontSize:11}}>Escreve um número de PLR, RP, OT ou DP para pesquisar</div></div></WBox>):
-            searchResults.length===0?(<WBox><div style={{textAlign:"center",padding:16,color:"#64748b"}}><div style={{fontSize:24,marginBottom:6}}>🔍</div><div style={{fontSize:11}}>Sem resultados para "{search}"</div></div></WBox>):(
-              <div>
-                <div style={{fontSize:10,color:"#10b981",fontWeight:600,marginBottom:8}}>{searchResults.length} resultado{searchResults.length!==1?"s":""} para "{search}"</div>
-                <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                  {searchResults.map((r,i)=>{
-                    // Encontrar valores por chave flexível
-                    const g=(keys)=>{for(const k of keys){const found=Object.keys(r).find(rk=>keys.some(kk=>rk.toLowerCase().includes(kk.toLowerCase())));if(found)return(r[found]||"").toString();}return"";};
-                    const processo=g(["Processo de Origem","processo"]);
-                    const dp=g(["Defini","Projeto"]);
-                    const subordem=g(["Subordem"]);
-                    const designacao=g(["Designa"]);
-                    const estadoP=g(["Estado Progest"]);
-                    const estadoOT=g(["Estado Ordem","Trabalho"]);
-                    const estadoOpExec=g(["Estado Operacional Exec","Operacional Exec"]);
-                    const diasOpExec=g(["Dias Est. Op. Exec","Dias Est"]);
-                    const tipoProc=g(["Tipo de Processo","Tipo Processo"]);
-                    const concelho=g(["Concelho"]);
-                    const pse=g(["PSE"]);
-                    const adjudicacao=g(["Adjudica"]);
-                    const dataFim=g(["Data Base Fim","Data Fim"]);
-                    const ultimaAtt=g(["ltima Atualiza","Última"]);
-                    const isPLR=processo.startsWith("9")||processo.startsWith("8");
-                    const accentColor=isPLR?"#16a34a":"#3b82f6";
-                    const diasAtt=ultimaAtt?Math.floor((new Date()-new Date(ultimaAtt))/86400000):null;
-                    return (
-                      <WBox key={i} style={{padding:12,borderLeft:"3px solid "+accentColor}}>
-                        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
-                          <div style={{display:"flex",alignItems:"center",gap:6}}>
-                            <span style={{fontSize:12}}>{isPLR?"⚡":"🏗️"}</span>
-                            <span style={{fontSize:12,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{processo||"—"}</span>
-                            <span style={{fontSize:9,background:accentColor+"20",color:accentColor,padding:"1px 5px",borderRadius:3,fontWeight:600}}>{isPLR?"PLR":"RP"}</span>
-                            {tipoProc&&<span style={{fontSize:9,background:"#47556920",color:"#94a3b8",padding:"1px 5px",borderRadius:3}}>{tipoProc}</span>}
-                          </div>
-                          {diasAtt!==null&&diasAtt>0&&diasAtt<9999&&<span style={{fontSize:9,color:diasAtt>10?"#f59e0b":"#64748b"}}>att: {diasAtt}d</span>}
-                        </div>
-                        <div style={{fontSize:11,color:"#e2e8f0",marginBottom:4}}>{designacao||"—"}</div>
-                        {estadoOpExec&&(
-                          <div style={{background:"#f59e0b15",border:"1px solid #f59e0b30",borderRadius:5,padding:"4px 8px",marginBottom:6,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                            <span style={{fontSize:10,fontWeight:600,color:"#f59e0b"}}>⚙️ {estadoOpExec}</span>
-                            {diasOpExec&&diasOpExec!=="0"&&<span style={{fontSize:9,color:"#f59e0b"}}>({diasOpExec} dias)</span>}
-                          </div>
-                        )}
-                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,fontSize:10}}>
-                          <div><span style={{color:"#64748b"}}>DP: </span><span style={{color:"#f59e0b",fontFamily:"monospace"}}>{dp||"—"}</span></div>
-                          <div><span style={{color:"#64748b"}}>OT: </span><span style={{color:"#94a3b8",fontFamily:"monospace"}}>{subordem||"—"}</span></div>
-                          <div><span style={{color:"#64748b"}}>Estado: </span><span style={{color:"#e2e8f0"}}>{estadoP||"—"}</span></div>
-                          <div><span style={{color:"#64748b"}}>OT Estado: </span><span style={{color:estadoOT==="Pendente"?"#f59e0b":estadoOT==="Suspensa"?"#dc2626":"#10b981"}}>{estadoOT||"—"}</span></div>
-                          <div><span style={{color:"#64748b"}}>📍 </span><span style={{color:"#94a3b8"}}>{concelho||"—"}</span></div>
-                          <div><span style={{color:"#64748b"}}>PSE: </span><span style={{color:"#94a3b8"}}>{pse||"—"}</span></div>
-                          <div><span style={{color:"#64748b"}}>Adjudicação: </span><span style={{color:"#94a3b8"}}>{adjudicacao||"—"}</span></div>
-                          <div><span style={{color:"#64748b"}}>Data Fim: </span><span style={{color:"#94a3b8"}}>{dataFim?fmtD(dataFim):"—"}</span></div>
-                        </div>
-                      </WBox>
-                    );
-                  })}
-                </div>
+            {!search.trim()?(<WBox><div style={{textAlign:"center",padding:16,color:"#64748b"}}>🔍 Escreve um PLR, RP, DP ou concelho</div></WBox>):
+            searchResults.length===0?(<WBox><div style={{textAlign:"center",padding:16,color:"#64748b"}}>🔍 Sem resultados para "{search}"</div></WBox>):(
+              <div><div style={{fontSize:10,color:"#10b981",fontWeight:600,marginBottom:8}}>{searchResults.length} resultado{searchResults.length!==1?"s":""}</div>
+                {searchResults.map((r,i)=><Card key={i} r={r} i={i}/>)}
               </div>
             )}
           </div>)}
 
-          {/* Histórico */}
           {tab==="historico"&&(<div>
-            {(!historico||historico.length===0)?(<WBox><div style={{textAlign:"center",padding:16,color:"#64748b"}}><div style={{fontSize:24,marginBottom:6}}>📅</div><div style={{fontSize:11}}>Sem histórico de análises</div></div></WBox>):(
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {(historico||[]).map((h,i)=>(
-                  <WBox key={i} style={{padding:10}}>
-                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
-                      <span style={{fontSize:11,fontWeight:700,color:"#fff"}}>{fmtD(h.data)}</span>
-                      <span style={{fontSize:9,color:"#64748b"}}>{h.ficheiro}</span>
-                    </div>
-                    <div style={{display:"flex",gap:8,fontSize:10}}>
-                      <span style={{color:"#3b82f6"}}>{h.total} registos</span>
-                      {h.novas>0&&<span style={{color:"#10b981"}}>+{h.novas} novas</span>}
-                      {h.removidas>0&&<span style={{color:"#dc2626"}}>-{h.removidas} removidas</span>}
-                      {h.mudancas>0&&<span style={{color:"#f59e0b"}}>{h.mudancas} alterações</span>}
-                      {h.alertas>0&&<span style={{color:"#f97316"}}>{h.alertas} alertas</span>}
-                    </div>
-                  </WBox>
-                ))}
-              </div>
+            {(!historico||historico.length===0)?(<WBox><div style={{textAlign:"center",padding:16,color:"#64748b"}}>📅 Sem histórico</div></WBox>):(
+              (historico||[]).map((h,i)=>(<WBox key={i} style={{padding:10,marginBottom:6}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontSize:11,fontWeight:700,color:"#fff"}}>{fmtD(h.data)}</span>
+                  <span style={{fontSize:9,color:"#64748b"}}>{h.ficheiro}</span>
+                </div>
+                <div style={{display:"flex",gap:8,fontSize:10}}>
+                  <span style={{color:"#3b82f6"}}>{h.total} registos</span>
+                  {h.novas>0&&<span style={{color:"#10b981"}}>+{h.novas} novas</span>}
+                  {h.removidas>0&&<span style={{color:"#dc2626"}}>-{h.removidas}</span>}
+                  {h.mudancas>0&&<span style={{color:"#f59e0b"}}>{h.mudancas} alterações</span>}
+                  {h.alertas>0&&<span style={{color:"#f97316"}}>{h.alertas} alertas</span>}
+                </div>
+              </WBox>))
             )}
           </div>)}
         </div>)}
@@ -1626,7 +1493,7 @@ function App() {
     window.dataStore.load("contacts",(d)=>{setContacts(d);done();});
     window.dataStore.load("reunioes",(d)=>{setReunioes(d);done();});
     window.dataStore.load("excelHistorico",(d)=>{setExcelHistorico(d);done();});
-    window.excelDB.load("meta").then(m=>{if(m)setExcelMeta(m);});
+    try{const em=localStorage.getItem("excel_meta");if(em)setExcelMeta(JSON.parse(em));}catch(e){}
     const u1=window.dataStore.listen("obras",(d)=>setObras(d));
     const u2=window.dataStore.listen("events",(d)=>setEvents(d));
     const u3=window.dataStore.listen("todos",(d)=>setTodos(d));
