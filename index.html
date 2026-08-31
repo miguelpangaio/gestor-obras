@@ -1048,7 +1048,7 @@ function AnalisePage({onBack}) {
 }
 
 /* ── EXCEL ANALYSIS ── */
-const EXCEL_COLS=["Nº de Processo de Origem","Tipo de Processo","Definição do Projeto","Subordem","Designação Subordem","Data Compromisso","Estado Sistema","Estado Progest","PSE","Concelho","Adjudicação","Última Atualização Ordem","Estado Operacional Execução"];
+const EXCEL_COLS=["Nº de Processo de Origem","Tipo de Processo","Definição do Projeto","Subordem","Designação Subordem","Data Base Fim","Data Fim Programada (OT)","Data Compromisso","Estado Sistema","Estado Progest","Estado Ordem de Trabalho","Concelho","Adjudicação","Data fim programada (processo)","Última Atualização Ordem","Estado Operacional Execução","Dias Est. Op. Execução","Observações Execução","Estado Operacional Aut. e Lic.","Dias Est. Op. Aut. e Lic.","Observações AUT. E LIC."];
 
 function parseExcel(file){
   return new Promise((res,rej)=>{
@@ -1067,14 +1067,22 @@ function slimRow(r){
     dp:String(r[find(["Defini"])]||""),
     ot:String(r[find(["Subordem"])]||""),
     dsg:String(r[find(["Designa"])]||""),
+    dbf:String(r[find(["Data Base Fim"])]||""),
+    dfot:String(r[find(["Data Fim Programada (OT)","Fim Programada (OT)"])]||""),
     dc:String(r[find(["Data Compromisso"])]||""),
     es:String(r[find(["Estado Sistema"])]||""),
     ep:String(r[find(["Estado Progest"])]||""),
-    pse:String(r[find(["PSE"])]||""),
+    eot:String(r[find(["Estado Ordem de Trabalho","Estado Ordem"])]||""),
     conc:String(r[find(["Concelho"])]||""),
     adj:String(r[find(["Adjudica"])]||""),
+    dfp:String(r[find(["Data fim programada (processo)","fim programada (processo)"])]||""),
     ua:String(r[find(["ltima Atualiza"])]||""),
-    eoe:String(r[find(["Estado Operacional Exec","Operacional"])]||"")
+    eoe:String(r[find(["Estado Operacional Exec"])]||""),
+    doe:String(r[find(["Dias Est. Op. Exec","Dias Est. Op. Execu"])]||""),
+    obe:String(r[find(["Observa","Execu"])]||""),
+    eoal:String(r[find(["Estado Operacional Aut","Aut. e Lic"])]||""),
+    doal:String(r[find(["Dias Est. Op. Aut"])]||""),
+    obal:String(r[find(["Observa","AUT. E LIC","LIC."])]||"")
   };
 }
 
@@ -1102,16 +1110,35 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,onUpdateMeta}){
   },[]);
 
   const doAnalyze=(data,prev)=>{
-    const r={totais:{},estados:{},estadosOT:{},concelhos:{},novas:[],removidas:[],mudancas:[],alertas:[]};
+    const r={totais:{},estados:{},estadosOT:{},estadosEOT:{},concelhos:{},novas:[],removidas:[],mudancas:[],alertas:[]};
     r.totais.total=data.length;
     r.totais.processos=new Set(data.map(x=>x.proc).filter(Boolean)).size;
     r.totais.dps=new Set(data.map(x=>x.dp).filter(Boolean)).size;
     data.forEach(x=>{const e=x.ep||"Sem estado";r.estados[e]=(r.estados[e]||0)+1;});
     data.forEach(x=>{const e=x.eoe||"Sem estado";r.estadosOT[e]=(r.estadosOT[e]||0)+1;});
+    data.forEach(x=>{const e=x.eot||"Sem estado";r.estadosEOT[e]=(r.estadosEOT[e]||0)+1;});
     data.forEach(x=>{const c=x.conc||"Sem concelho";r.concelhos[c]=(r.concelhos[c]||0)+1;});
     const hoje=new Date();
-    data.forEach(x=>{if(x.ua){const d=new Date(x.ua);const dias=Math.floor((hoje-d)/86400000);if(dias>5&&x.eoe&&x.eoe.toLowerCase().includes("pend")){r.alertas.push({proc:x.proc,dp:x.dp,dsg:x.dsg,dias,ep:x.ep,conc:x.conc,eoe:x.eoe});}}});
-    r.alertas.sort((a,b)=>b.dias-a.dias);
+    data.forEach(x=>{
+      // Alerta: OT sem atualização há mais de 5 dias
+      if(x.ua){const d=new Date(x.ua);const dias=Math.floor((hoje-d)/86400000);
+        if(dias>5&&x.eot&&x.eot.toLowerCase()!=="fechada"){
+          r.alertas.push({tipo:"parada",proc:x.proc,dp:x.dp,dsg:x.dsg,dias,ep:x.ep,conc:x.conc,eoe:x.eoe,eot:x.eot,doe:x.doe});
+        }}
+      // Alerta: prazo ultrapassado
+      const prazo=x.dc||x.dfp||x.dbf;
+      if(prazo){const dp=new Date(prazo);const diasP=Math.floor((hoje-dp)/86400000);
+        if(diasP>0&&x.eot&&x.eot.toLowerCase()!=="fechada"){
+          r.alertas.push({tipo:"prazo",proc:x.proc,dp:x.dp,dsg:x.dsg,dias:diasP,ep:x.ep,conc:x.conc,eoe:x.eoe,eot:x.eot,prazo:prazo});
+        }else if(diasP>-10&&diasP<=0&&x.eot&&x.eot.toLowerCase()!=="fechada"){
+          r.alertas.push({tipo:"prazo_proximo",proc:x.proc,dp:x.dp,dsg:x.dsg,dias:Math.abs(diasP),ep:x.ep,conc:x.conc,eoe:x.eoe,eot:x.eot,prazo:prazo});
+        }}
+      // Alerta: licenciamento parado
+      if(x.doal&&parseInt(x.doal)>15&&x.eoal){
+        r.alertas.push({tipo:"licenca",proc:x.proc,dp:x.dp,dsg:x.dsg,dias:parseInt(x.doal),ep:x.ep,conc:x.conc,eoal:x.eoal,obal:x.obal});
+      }
+    });
+    r.alertas.sort((a,b)=>{const ord={prazo:0,prazo_proximo:1,parada:2,licenca:3};return(ord[a.tipo]||9)-(ord[b.tipo]||9)||b.dias-a.dias;});
     if(prev&&prev.length>0){
       const pMap=new Map();prev.forEach(x=>pMap.set(x.proc+"_"+x.dp+"_"+x.ot,x));
       const cMap=new Map();data.forEach(x=>cMap.set(x.proc+"_"+x.dp+"_"+x.ot,x));
@@ -1120,6 +1147,7 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,onUpdateMeta}){
       data.forEach(x=>{const k=x.proc+"_"+x.dp+"_"+x.ot;const p=pMap.get(k);if(p){
         if(p.ep&&x.ep&&p.ep!==x.ep)r.mudancas.push({tipo:"progest",proc:x.proc,dp:x.dp,dsg:x.dsg,de:p.ep,para:x.ep});
         if(p.eoe&&x.eoe&&p.eoe!==x.eoe)r.mudancas.push({tipo:"operacional",proc:x.proc,dp:x.dp,dsg:x.dsg,de:p.eoe,para:x.eoe});
+        if(p.eot&&x.eot&&p.eot!==x.eot)r.mudancas.push({tipo:"ordem",proc:x.proc,dp:x.dp,dsg:x.dsg,de:p.eot,para:x.eot});
       }});
     }
     return r;
@@ -1158,6 +1186,8 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,onUpdateMeta}){
     const isPLR=r.proc.startsWith("9")||r.proc.startsWith("8");
     const ac=isPLR?"#16a34a":"#3b82f6";
     const diasAtt=r.ua?Math.floor((new Date()-new Date(r.ua))/86400000):null;
+    const prazo=r.dc||r.dfp||r.dbf;
+    const diasPrazo=prazo?Math.floor((new Date()-new Date(prazo))/86400000):null;
     return(<WBox key={i} style={{padding:12,borderLeft:"3px solid "+ac,marginBottom:6}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
         <div style={{display:"flex",alignItems:"center",gap:6}}>
@@ -1169,17 +1199,26 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,onUpdateMeta}){
         {diasAtt>0&&diasAtt<9999&&<span style={{fontSize:9,color:diasAtt>10?"#f59e0b":"#64748b"}}>att: {diasAtt}d</span>}
       </div>
       <div style={{fontSize:11,color:"#e2e8f0",marginBottom:4}}>{r.dsg||"—"}</div>
-      {r.eoe&&<div style={{background:"#f59e0b15",border:"1px solid #f59e0b30",borderRadius:5,padding:"4px 8px",marginBottom:5}}><span style={{fontSize:10,fontWeight:600,color:"#f59e0b"}}>⚙️ {r.eoe}</span></div>}
+      {r.eot&&<div style={{display:"flex",gap:6,marginBottom:4}}>
+        <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,fontWeight:600,background:r.eot==="Pendente"?"#f59e0b20":r.eot==="Suspensa"?"#dc262620":r.eot==="Fechada"?"#64748b20":"#3b82f620",color:r.eot==="Pendente"?"#f59e0b":r.eot==="Suspensa"?"#dc2626":r.eot==="Fechada"?"#64748b":"#3b82f6"}}>OT: {r.eot}</span>
+        {diasPrazo!==null&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,fontWeight:600,background:diasPrazo>0?"#dc262620":"#10b98120",color:diasPrazo>0?"#dc2626":"#10b981"}}>{diasPrazo>0?"⚠️ "+diasPrazo+"d atrasada":"✅ "+Math.abs(diasPrazo)+"d até prazo"}</span>}
+      </div>}
+      {r.eoe&&<div style={{background:"#f59e0b15",border:"1px solid #f59e0b30",borderRadius:5,padding:"4px 8px",marginBottom:5,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:10,fontWeight:600,color:"#f59e0b"}}>⚙️ {r.eoe}</span>{r.doe&&r.doe!=="0"&&<span style={{fontSize:9,color:"#f59e0b"}}>({r.doe} dias)</span>}</div>}
+      {r.eoal&&<div style={{background:"#8b5cf615",border:"1px solid #8b5cf630",borderRadius:5,padding:"4px 8px",marginBottom:5,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:10,fontWeight:600,color:"#8b5cf6"}}>📋 {r.eoal}</span>{r.doal&&r.doal!=="0"&&<span style={{fontSize:9,color:"#8b5cf6"}}>({r.doal} dias)</span>}</div>}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,fontSize:10}}>
         <div><span style={{color:"#64748b"}}>DP: </span><span style={{color:"#f59e0b",fontFamily:"monospace"}}>{r.dp||"—"}</span></div>
         <div><span style={{color:"#64748b"}}>OT: </span><span style={{color:"#94a3b8",fontFamily:"monospace"}}>{r.ot||"—"}</span></div>
         <div><span style={{color:"#64748b"}}>Estado: </span><span style={{color:"#e2e8f0"}}>{r.ep||"—"}</span></div>
         <div><span style={{color:"#64748b"}}>📍 </span><span style={{color:"#94a3b8"}}>{r.conc||"—"}</span></div>
-        <div><span style={{color:"#64748b"}}>PSE: </span><span style={{color:"#94a3b8"}}>{r.pse||"—"}</span></div>
         <div><span style={{color:"#64748b"}}>Adjudicação: </span><span style={{color:"#94a3b8"}}>{r.adj||"—"}</span></div>
         <div><span style={{color:"#64748b"}}>Data Comp.: </span><span style={{color:"#94a3b8"}}>{r.dc?fmtD(r.dc):"—"}</span></div>
-        <div><span style={{color:"#64748b"}}>Últ. Att.: </span><span style={{color:"#94a3b8"}}>{r.ua?fmtD(r.ua):"—"}</span></div>
+        <div><span style={{color:"#64748b"}}>Data Fim Base: </span><span style={{color:"#94a3b8"}}>{r.dbf?fmtD(r.dbf):"—"}</span></div>
+        <div><span style={{color:"#64748b"}}>Fim Prog.: </span><span style={{color:"#94a3b8"}}>{r.dfp?fmtD(r.dfp):"—"}</span></div>
       </div>
+      {(r.obe||r.obal)&&(<div style={{marginTop:5,borderTop:"1px solid #334155",paddingTop:4,fontSize:9,color:"#64748b"}}>
+        {r.obe&&<div>📝 Exec: {r.obe}</div>}
+        {r.obal&&<div>📝 Lic: {r.obal}</div>}
+      </div>)}
     </WBox>);
   };
 
@@ -1229,6 +1268,11 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,onUpdateMeta}){
                 <div style={{fontSize:11,fontWeight:700,color:"#fff"}}>{n}</div><div style={{fontSize:9,color:"#64748b"}}>{e}</div>
               </div>))}
             </div></WBox>
+            <WBox style={{marginBottom:10}}><WTitle icon="🔧" text="Estado Ordem de Trabalho"/><div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+              {Object.entries(result.estadosEOT).sort((a,b)=>b[1]-a[1]).map(([e,n])=>{const colors={"Pendente":"#f59e0b","Agendada":"#3b82f6","No Local":"#10b981","Suspensa":"#dc2626","Fechada":"#64748b"};return(<div key={e} style={{background:(colors[e]||"#64748b")+"15",padding:"6px 10px",borderRadius:6,border:"1px solid "+(colors[e]||"#64748b")+"30"}}>
+                <div style={{fontSize:14,fontWeight:800,color:colors[e]||"#94a3b8"}}>{n}</div><div style={{fontSize:9,color:colors[e]||"#64748b"}}>{e}</div>
+              </div>);})}
+            </div></WBox>
             <WBox><WTitle icon="📍" text="Por Concelho"/><div style={{display:"flex",flexWrap:"wrap",gap:6}}>
               {Object.entries(result.concelhos).sort((a,b)=>b[1]-a[1]).map(([c,n])=>(<div key={c} style={{background:"#0f172a",padding:"6px 10px",borderRadius:6,border:"1px solid #334155"}}>
                 <div style={{fontSize:11,fontWeight:700,color:"#fff"}}>{n}</div><div style={{fontSize:9,color:"#64748b"}}>{c}</div>
@@ -1268,14 +1312,45 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,onUpdateMeta}){
           {tab==="alertas"&&(<div>
             {result.alertas.length===0?(<WBox><div style={{textAlign:"center",padding:16,color:"#64748b"}}>✅ Sem alertas</div></WBox>):(
               <div>
-                <div style={{fontSize:10,color:"#f59e0b",marginBottom:8,fontWeight:600}}>⚠️ {result.alertas.length} processos com estado operacional pendente há mais de 5 dias</div>
-                {result.alertas.map((a,i)=>(<WBox key={i} style={{padding:10,marginBottom:6,borderLeft:"3px solid "+(a.dias>15?"#dc2626":"#f59e0b")}}>
+                {result.alertas.filter(a=>a.tipo==="prazo").length>0&&<div style={{fontSize:11,fontWeight:700,color:"#dc2626",marginBottom:6}}>🚨 Prazo ultrapassado ({result.alertas.filter(a=>a.tipo==="prazo").length})</div>}
+                {result.alertas.filter(a=>a.tipo==="prazo").map((a,i)=>(<WBox key={"p"+i} style={{padding:10,marginBottom:6,borderLeft:"3px solid #dc2626"}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}>
                     <span style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{a.proc}</span>
-                    <span style={{fontSize:10,fontWeight:700,color:a.dias>15?"#dc2626":"#f59e0b",background:a.dias>15?"#dc262615":"#f59e0b15",padding:"2px 6px",borderRadius:4}}>⏰ {a.dias} dias</span>
+                    <span style={{fontSize:10,fontWeight:700,color:"#dc2626",background:"#dc262615",padding:"2px 6px",borderRadius:4}}>🚨 {a.dias}d atrasada</span>
                   </div>
                   <div style={{fontSize:10,color:"#94a3b8"}}>{a.dsg}</div>
-                  <div style={{display:"flex",gap:8,marginTop:3,fontSize:9,color:"#64748b"}}><span>{a.dp}</span><span>📍 {a.conc}</span><span>{a.ep}</span><span>⚙️ {a.eoe}</span></div>
+                  <div style={{display:"flex",gap:8,marginTop:3,fontSize:9,color:"#64748b",flexWrap:"wrap"}}><span>{a.dp}</span><span>📍 {a.conc}</span><span>OT: {a.eot}</span><span>Prazo: {fmtD(a.prazo)}</span></div>
+                </WBox>))}
+
+                {result.alertas.filter(a=>a.tipo==="prazo_proximo").length>0&&<div style={{fontSize:11,fontWeight:700,color:"#f59e0b",marginTop:10,marginBottom:6}}>⏰ Prazo próximo ({result.alertas.filter(a=>a.tipo==="prazo_proximo").length})</div>}
+                {result.alertas.filter(a=>a.tipo==="prazo_proximo").map((a,i)=>(<WBox key={"pp"+i} style={{padding:10,marginBottom:6,borderLeft:"3px solid #f59e0b"}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}>
+                    <span style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{a.proc}</span>
+                    <span style={{fontSize:10,fontWeight:700,color:"#f59e0b",background:"#f59e0b15",padding:"2px 6px",borderRadius:4}}>⏰ {a.dias}d até prazo</span>
+                  </div>
+                  <div style={{fontSize:10,color:"#94a3b8"}}>{a.dsg}</div>
+                  <div style={{display:"flex",gap:8,marginTop:3,fontSize:9,color:"#64748b",flexWrap:"wrap"}}><span>{a.dp}</span><span>📍 {a.conc}</span><span>OT: {a.eot}</span><span>Prazo: {fmtD(a.prazo)}</span></div>
+                </WBox>))}
+
+                {result.alertas.filter(a=>a.tipo==="parada").length>0&&<div style={{fontSize:11,fontWeight:700,color:"#f97316",marginTop:10,marginBottom:6}}>⚠️ OTs sem atualização há +5 dias ({result.alertas.filter(a=>a.tipo==="parada").length})</div>}
+                {result.alertas.filter(a=>a.tipo==="parada").map((a,i)=>(<WBox key={"s"+i} style={{padding:10,marginBottom:6,borderLeft:"3px solid "+(a.dias>15?"#dc2626":"#f97316")}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}>
+                    <span style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{a.proc}</span>
+                    <span style={{fontSize:10,fontWeight:700,color:a.dias>15?"#dc2626":"#f97316",background:a.dias>15?"#dc262615":"#f9731615",padding:"2px 6px",borderRadius:4}}>⏰ {a.dias}d sem att</span>
+                  </div>
+                  <div style={{fontSize:10,color:"#94a3b8"}}>{a.dsg}</div>
+                  <div style={{display:"flex",gap:8,marginTop:3,fontSize:9,color:"#64748b",flexWrap:"wrap"}}><span>{a.dp}</span><span>📍 {a.conc}</span><span>OT: {a.eot}</span>{a.eoe&&<span>⚙️ {a.eoe}</span>}</div>
+                </WBox>))}
+
+                {result.alertas.filter(a=>a.tipo==="licenca").length>0&&<div style={{fontSize:11,fontWeight:700,color:"#8b5cf6",marginTop:10,marginBottom:6}}>📋 Licenciamento parado há +15 dias ({result.alertas.filter(a=>a.tipo==="licenca").length})</div>}
+                {result.alertas.filter(a=>a.tipo==="licenca").map((a,i)=>(<WBox key={"l"+i} style={{padding:10,marginBottom:6,borderLeft:"3px solid #8b5cf6"}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}>
+                    <span style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{a.proc}</span>
+                    <span style={{fontSize:10,fontWeight:700,color:"#8b5cf6",background:"#8b5cf615",padding:"2px 6px",borderRadius:4}}>📋 {a.dias}d</span>
+                  </div>
+                  <div style={{fontSize:10,color:"#94a3b8"}}>{a.dsg}</div>
+                  <div style={{display:"flex",gap:8,marginTop:3,fontSize:9,color:"#64748b",flexWrap:"wrap"}}><span>{a.dp}</span><span>📍 {a.conc}</span><span>{a.eoal}</span></div>
+                  {a.obal&&<div style={{fontSize:9,color:"#8b5cf6",marginTop:2}}>📝 {a.obal}</div>}
                 </WBox>))}
               </div>
             )}
