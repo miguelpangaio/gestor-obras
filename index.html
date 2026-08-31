@@ -583,7 +583,7 @@ function Landing({obras,onType,onNew,onSelObra,onReunioes,onExcel,reunioes,excel
             <button onClick={()=>setShowNotifPanel(!showNotifPanel)} style={{background:showNotifPanel?"#f59e0b20":"#1e293b",border:"1px solid "+(showNotifPanel?"#f59e0b40":"#334155"),borderRadius:6,color:notif.notifEnabled?"#16a34a":"#94a3b8",cursor:"pointer",fontSize:10,padding:"4px 8px",fontWeight:600,display:"flex",alignItems:"center",gap:3,position:"relative"}}>{notif.notifEnabled?"🔔":"🔕"}{notif.notifEnabled&&<span style={{width:5,height:5,borderRadius:3,background:"#16a34a",position:"absolute",top:2,right:2}}/>}</button>
             <div style={{fontSize:9,color:"#475569",background:"#1e293b",padding:"4px 10px",borderRadius:6,border:"1px solid #334155",fontWeight:600,letterSpacing:1}}>E-REDES · OAZ</div>
           </div></div></div>
-      <div style={{padding:"0 20px 28px",maxWidth:820,margin:"0 auto"}}>
+      <div style={{padding:"0 20px 28px",maxWidth:1400,margin:"0 auto"}}>
         {/* Notification Settings Panel */}
         {showNotifPanel && <div style={{marginBottom:12}}><NotifSettingsPanel notif={notif} onClose={()=>setShowNotifPanel(false)} /></div>}
         {/* KPIs */}
@@ -600,42 +600,42 @@ function Landing({obras,onType,onNew,onSelObra,onReunioes,onExcel,reunioes,excel
         {/* Weather */}
         <div style={{marginBottom:12}}><WeatherW/></div>
 
-        {/* Categories */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:12}}>
-          {TIPOS.map(t=>{const m=TM[t];const ta=a.filter(o=>o.tipo===t);const ac2=ta.filter(o=>!o.concluida).length;const dn2=ta.filter(o=>o.concluida).length;const tot=ta.length;const pct=tot>0?Math.round((dn2/tot)*100):0;
-            return (<div key={t} onClick={()=>onType(t)} style={{background:m.bg,borderRadius:11,padding:"16px 14px",cursor:"pointer",transition:"transform .15s"}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-2px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"}><div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}><span style={{fontSize:18}}>{m.icon}</span><span style={{fontSize:15,fontWeight:700,color:"#fff"}}>{t}</span></div><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}><div style={{fontSize:28,fontWeight:800,color:"#fff"}}>{ac2}</div><div style={{fontSize:10,color:"rgba(255,255,255,.5)",lineHeight:1.3}}>ativas<br/>{dn2} concl.</div></div><div style={{height:6,borderRadius:3,background:"rgba(255,255,255,.15)",overflow:"hidden"}}><div style={{height:6,borderRadius:3,background:"rgba(255,255,255,.6)",width:pct+"%"}}/></div></div>);
-          })}
-        </div>
-
-
-        {/* Reuniões */}
-        <div onClick={onReunioes} style={{background:"linear-gradient(135deg,#312e81,#6366f1)",borderRadius:11,padding:"16px 14px",cursor:"pointer",marginBottom:12,transition:"transform .15s",display:"flex",alignItems:"center",gap:12}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-2px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"}>
-          <span style={{fontSize:24}}>📋</span>
-          <div style={{flex:1}}>
-            <div style={{fontSize:15,fontWeight:700,color:"#fff"}}>Reuniões</div>
-            <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:1}}>{(reunioes||[]).length} {(reunioes||[]).length===1?"pasta":"pastas"} · {(reunioes||[]).reduce((s,f)=>(s+(f.reunioes||[]).length),0)} reuniões</div>
+        {/* Desktop: 2 columns for Categories + Reuniões/Excel | Mobile: stacked */}
+        <div className="desktop-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(300px, 1fr))",gap:12,marginBottom:12}}>
+          {/* Categories */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+            {TIPOS.map(t=>{const m=TM[t];const ta=a.filter(o=>o.tipo===t);const ac2=ta.filter(o=>!o.concluida).length;const dn2=ta.filter(o=>o.concluida).length;const tot=ta.length;const pct=tot>0?Math.round((dn2/tot)*100):0;
+              return (<div key={t} onClick={()=>onType(t)} style={{background:m.bg,borderRadius:11,padding:"16px 14px",cursor:"pointer",transition:"transform .15s"}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-2px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"}><div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}><span style={{fontSize:18}}>{m.icon}</span><span style={{fontSize:15,fontWeight:700,color:"#fff"}}>{t}</span></div><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}><div style={{fontSize:28,fontWeight:800,color:"#fff"}}>{ac2}</div><div style={{fontSize:10,color:"rgba(255,255,255,.5)",lineHeight:1.3}}>ativas<br/>{dn2} concl.</div></div><div style={{height:6,borderRadius:3,background:"rgba(255,255,255,.15)",overflow:"hidden"}}><div style={{height:6,borderRadius:3,background:"rgba(255,255,255,.6)",width:pct+"%"}}/></div></div>);
+            })}
           </div>
-          <span style={{color:"rgba(255,255,255,.4)",fontSize:16}}>›</span>
-        </div>
 
-        {/* Análise Excel */}
-        <div onClick={onExcel} style={{background:"linear-gradient(135deg,#065f46,#10b981)",borderRadius:11,padding:"16px 14px",cursor:"pointer",marginBottom:12,transition:"transform .15s",display:"flex",alignItems:"center",gap:12}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-2px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"}>
-          <span style={{fontSize:24}}>📊</span>
-          <div style={{flex:1}}>
-            <div style={{fontSize:15,fontWeight:700,color:"#fff"}}>Análise Excel</div>
-            <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:1}}>{excelMeta?"Última análise: "+fmtD(excelMeta.d):"Carrega o Excel para analisar"}</div>
+          {/* Reuniões + Excel side panel */}
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <div onClick={onReunioes} style={{background:"linear-gradient(135deg,#312e81,#6366f1)",borderRadius:11,padding:"16px 14px",cursor:"pointer",transition:"transform .15s",display:"flex",alignItems:"center",gap:12}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-2px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"}>
+              <span style={{fontSize:24}}>📋</span>
+              <div style={{flex:1}}>
+                <div style={{fontSize:15,fontWeight:700,color:"#fff"}}>Reuniões</div>
+                <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:1}}>{(reunioes||[]).length} {(reunioes||[]).length===1?"pasta":"pastas"} · {(reunioes||[]).reduce((s,f)=>(s+(f.reunioes||[]).length),0)} reuniões</div>
+              </div>
+              <span style={{color:"rgba(255,255,255,.4)",fontSize:16}}>›</span>
+            </div>
+            <div onClick={onExcel} style={{background:"linear-gradient(135deg,#065f46,#10b981)",borderRadius:11,padding:"16px 14px",cursor:"pointer",transition:"transform .15s",display:"flex",alignItems:"center",gap:12}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-2px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"}>
+              <span style={{fontSize:24}}>📊</span>
+              <div style={{flex:1}}>
+                <div style={{fontSize:15,fontWeight:700,color:"#fff"}}>Análise Excel</div>
+                <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:1}}>{excelMeta?"Última análise: "+fmtD(excelMeta.d):"Carrega o Excel para analisar"}</div>
+              </div>
+              <span style={{color:"rgba(255,255,255,.4)",fontSize:16}}>›</span>
+            </div>
           </div>
-          <span style={{color:"rgba(255,255,255,.4)",fontSize:16}}>›</span>
         </div>
 
         {/* Activity */}
         {activity.length>0&&(<div style={{marginBottom:12}}><WBox><WTitle icon="⚡" text="Atividade Recente"/><div style={{maxHeight:130,overflowY:"auto"}}>{activity.map((a2,i)=>(<div key={i} style={{display:"flex",gap:8,padding:"3px 0",borderBottom:i<activity.length-1?"1px solid #293548":"none",alignItems:"center"}}><span style={{fontSize:12}}>{a2.icon}</span><div style={{flex:1}}><div style={{fontSize:11,color:"#e2e8f0"}}>{a2.text}</div><div style={{fontSize:9,color:"#64748b"}}>{fmtDT(a2.date)}</div></div><span style={{fontSize:9,color:TM[a2.tipo]?TM[a2.tipo].accent:"#64748b",fontWeight:600}}>{a2.tipo}</span></div>))}</div></WBox></div>)}
 
-        {/* Map */}
-        <div style={{marginBottom:12}}><AllObrasMap obras={obras} onSelect={onSelObra}/></div>
-
-        {/* Calendar + Todo */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+        {/* Map + Calendar + Todo in responsive grid */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(300px, 1fr))",gap:10,marginBottom:12}}>
+          <AllObrasMap obras={obras} onSelect={onSelObra}/>
           <CalendarW events={events} onAdd={onAddEv} onRemove={onRemEv}/>
           <TodoW todos={todos} onAdd={onAddTd} onToggle={onTogTd} onRemove={onRemTd}/>
         </div>
