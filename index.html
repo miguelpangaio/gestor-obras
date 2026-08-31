@@ -1625,14 +1625,14 @@ function App() {
     window.dataStore.load("todos",(d)=>{setTodos(d);done();});
     window.dataStore.load("contacts",(d)=>{setContacts(d);done();});
     window.dataStore.load("reunioes",(d)=>{setReunioes(d);done();});
-    window.dataStore.load("excelEstado",(d)=>{setExcelEstado(d&&d.length?d:null);done();});
+    window.dataStore.load("excelEstado",(d)=>{setExcelEstado(d&&d.rows?d:null);done();});
     window.dataStore.load("excelHistorico",(d)=>{setExcelHistorico(d);done();});
     const u1=window.dataStore.listen("obras",(d)=>setObras(d));
     const u2=window.dataStore.listen("events",(d)=>setEvents(d));
     const u3=window.dataStore.listen("todos",(d)=>setTodos(d));
     const u4=window.dataStore.listen("contacts",(d)=>setContacts(d));
     const u5=window.dataStore.listen("reunioes",(d)=>setReunioes(d));
-    const u6=window.dataStore.listen("excelEstado",(d)=>setExcelEstado(d&&d.length?d:null));
+    const u6=window.dataStore.listen("excelEstado",(d)=>setExcelEstado(d&&d.rows?d:null));
     const u7=window.dataStore.listen("excelHistorico",(d)=>setExcelHistorico(d));
     return ()=>{u1();u2();u3();u4();u5();u6();u7();};
   },[]);
