@@ -37,6 +37,40 @@ window.dataStore={
   load:function(c,cb){var cached=null;try{var r=localStorage.getItem('go-'+c);if(r)cached=JSON.parse(r);}catch(e){}if(cached)cb(cached);db.collection('userData').doc(c).get().then(function(doc){if(doc.exists){var d=JSON.parse(doc.data().data);try{localStorage.setItem('go-'+c,JSON.stringify(d));}catch(e){}cb(d);}else if(!cached){cb([]);}}).catch(function(e){if(!cached)cb([]);});},
   listen:function(c,cb){return db.collection('userData').doc(c).onSnapshot(function(doc){if(doc.exists){var d=JSON.parse(doc.data().data);try{localStorage.setItem('go-'+c,JSON.stringify(d));}catch(e){}cb(d);}},function(e){console.warn(e);});}
 };
+// IndexedDB para dados grandes (Excel)
+window.excelDB={
+  _db:null,
+  open:function(){
+    var self=this;
+    return new Promise(function(resolve,reject){
+      if(self._db){resolve(self._db);return;}
+      var req=indexedDB.open('GestorObrasExcel',1);
+      req.onupgradeneeded=function(e){e.target.result.createObjectStore('excel');};
+      req.onsuccess=function(e){self._db=e.target.result;resolve(self._db);};
+      req.onerror=function(e){reject(e);};
+    });
+  },
+  save:function(key,data){
+    return this.open().then(function(db){
+      return new Promise(function(resolve,reject){
+        var tx=db.transaction('excel','readwrite');
+        tx.objectStore('excel').put(data,key);
+        tx.oncomplete=function(){resolve(true);};
+        tx.onerror=function(e){reject(e);};
+      });
+    });
+  },
+  load:function(key){
+    return this.open().then(function(db){
+      return new Promise(function(resolve,reject){
+        var tx=db.transaction('excel','readonly');
+        var req=tx.objectStore('excel').get(key);
+        req.onsuccess=function(){resolve(req.result||null);};
+        req.onerror=function(e){reject(e);};
+      });
+    });
+  }
+};
 </script>
 <script type="text/babel">
 const {useState,useEffect,useCallback,useMemo,useRef} = React;
@@ -566,7 +600,7 @@ function ContactsW({contacts,onAdd,onRemove}) {
 }
 
 /* ── LANDING ── */
-function Landing({obras,onType,onNew,onSelObra,onReunioes,onExcel,reunioes,excelEstado,events,onAddEv,onRemEv,todos,onAddTd,onTogTd,onRemTd,contacts,onAddCt,onRemCt,notif}) {
+function Landing({obras,onType,onNew,onSelObra,onReunioes,onExcel,reunioes,excelMeta,events,onAddEv,onRemEv,todos,onAddTd,onTogTd,onRemTd,contacts,onAddCt,onRemCt,notif}) {
   const a=obras.filter(o=>!o.arquivada);const active=a.filter(o=>!o.concluida);const done=a.filter(o=>o.concluida);
   const alerts=useMemo(()=>getAlerts(obras),[obras]);const activity=useMemo(()=>getActivity(obras),[obras]);
   const totalTarefas=active.reduce((s,o)=>s+(o.tarefas||[]).filter(t=>!t.concluida).length,0);
@@ -623,7 +657,7 @@ function Landing({obras,onType,onNew,onSelObra,onReunioes,onExcel,reunioes,excel
           <span style={{fontSize:24}}>📊</span>
           <div style={{flex:1}}>
             <div style={{fontSize:15,fontWeight:700,color:"#fff"}}>Análise Excel</div>
-            <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:1}}>{excelEstado?"Última análise: "+fmtD(excelEstado.dataUpload||""):"Carrega o Excel para analisar"}</div>
+            <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:1}}>{excelMeta?"Última análise: "+fmtD(excelMeta.d):"Carrega o Excel para analisar"}</div>
           </div>
           <span style={{color:"rgba(255,255,255,.4)",fontSize:16}}>›</span>
         </div>
@@ -1064,138 +1098,103 @@ function parseExcel(file) {
   });
 }
 
-function analyzeData(rows,prevRows) {
-  const result={totais:{},estados:{},estadosOT:{},concelhos:{},novas:[],removidas:[],mudancas:[],alertas:[],resumo:""};
-  
-  // Helper: encontrar coluna por substring do nome
-  const cols=rows.length>0?Object.keys(rows[0]):[];
-  const findCol=(...terms)=>cols.find(c=>{const cl=c.toLowerCase();return terms.some(t=>cl.includes(t.toLowerCase()));});
-  const COL_PROC=findCol("Processo de Origem","processo");
-  const COL_DP=findCol("Defini","Projeto");
-  const COL_SUB=findCol("Subordem");
-  const COL_DESIG=findCol("Designa");
-  const COL_EST_PROG=findCol("Estado Progest");
-  const COL_EST_OT=findCol("Estado Ordem","Trabalho");
-  const COL_CONC=findCol("Concelho");
-  const COL_ULT=findCol("ltima Atualiza");
-  const COL_PSE=findCol("PSE");
-  
-  const gv=(r,col)=>(col&&r[col]!==null&&r[col]!==undefined)?r[col].toString():"";
-  const key=r=>gv(r,COL_PROC)+"_"+gv(r,COL_DP)+"_"+gv(r,COL_SUB);
-
-  // Totais
-  result.totais.total=rows.length;
-  result.totais.processos=new Set(rows.map(r=>gv(r,COL_PROC)).filter(Boolean)).size;
-  result.totais.dps=new Set(rows.map(r=>gv(r,COL_DP)).filter(Boolean)).size;
-
-  // Estados Progest
-  rows.forEach(r=>{const e=gv(r,COL_EST_PROG)||"Sem estado";result.estados[e]=(result.estados[e]||0)+1;});
-
-  // Estados OT
-  rows.forEach(r=>{const e=gv(r,COL_EST_OT)||"Sem estado";result.estadosOT[e]=(result.estadosOT[e]||0)+1;});
-
-  // Concelhos
-  rows.forEach(r=>{const c=gv(r,COL_CONC)||"Sem concelho";result.concelhos[c]=(result.concelhos[c]||0)+1;});
-
-  // Alertas - OTs pendentes com última atualização antiga
-  const hoje=new Date();
-  rows.forEach(r=>{
-    const ultimaAtt=COL_ULT?r[COL_ULT]:null;
-    if(ultimaAtt){
-      const d=new Date(ultimaAtt);
-      const dias=Math.floor((hoje-d)/86400000);
-      if(dias>5&&(gv(r,COL_EST_OT)).toLowerCase()==="pendente"){
-        result.alertas.push({tipo:"ot_parada",processo:gv(r,COL_PROC),dp:gv(r,COL_DP),designacao:gv(r,COL_DESIG),dias:dias,estado:gv(r,COL_EST_PROG),concelho:gv(r,COL_CONC)});
-      }
-    }
-  });
-  result.alertas.sort((a,b)=>b.dias-a.dias);
-
-  // Comparação com dia anterior
-  if(prevRows&&prevRows.length>0){
-    const prevCols=Object.keys(prevRows[0]);
-    const pFindCol=(...terms)=>prevCols.find(c=>{const cl=c.toLowerCase();return terms.some(t=>cl.includes(t.toLowerCase()));});
-    const P_PROC=pFindCol("Processo de Origem","processo");
-    const P_DP=pFindCol("Defini","Projeto");
-    const P_SUB=pFindCol("Subordem");
-    const P_DESIG=pFindCol("Designa");
-    const P_EST_PROG=pFindCol("Estado Progest");
-    const P_EST_OT=pFindCol("Estado Ordem","Trabalho");
-    const P_CONC=pFindCol("Concelho");
-    const pgv=(r,col)=>(col&&r[col]!==null&&r[col]!==undefined)?r[col].toString():"";
-    const pkey=r=>pgv(r,P_PROC)+"_"+pgv(r,P_DP)+"_"+pgv(r,P_SUB);
-    
-    const prevMap=new Map();prevRows.forEach(r=>prevMap.set(pkey(r),r));
-    const currMap=new Map();rows.forEach(r=>currMap.set(key(r),r));
-
-    // Novas
-    rows.forEach(r=>{const k=key(r);if(!prevMap.has(k)){result.novas.push({processo:gv(r,COL_PROC),dp:gv(r,COL_DP),designacao:gv(r,COL_DESIG),estado:gv(r,COL_EST_PROG),concelho:gv(r,COL_CONC)});}});
-
-    // Removidas
-    prevRows.forEach(r=>{const k=pkey(r);if(!currMap.has(k)){result.removidas.push({processo:pgv(r,P_PROC),dp:pgv(r,P_DP),designacao:pgv(r,P_DESIG),estado:pgv(r,P_EST_PROG)});}});
-
-    // Mudanças de estado
-    rows.forEach(r=>{const k=key(r);const prev=prevMap.get(k);if(prev){
-      const currEP=gv(r,COL_EST_PROG);const prevEP=pgv(prev,P_EST_PROG);
-      if(prevEP&&currEP&&prevEP!==currEP){result.mudancas.push({tipo:"estado_progest",processo:gv(r,COL_PROC),dp:gv(r,COL_DP),de:prevEP,para:currEP,designacao:gv(r,COL_DESIG)});}
-      const currEOT=gv(r,COL_EST_OT);const prevEOT=pgv(prev,P_EST_OT);
-      if(prevEOT&&currEOT&&prevEOT!==currEOT){result.mudancas.push({tipo:"estado_ot",processo:gv(r,COL_PROC),dp:gv(r,COL_DP),de:prevEOT,para:currEOT,designacao:gv(r,COL_DESIG)});}
-    }});
-  }
-
-  return result;
-}
-
-function ExcelAnalise({onBack,estado,historico,onUpdateEstado,onUpdateHistorico}) {
+function ExcelAnalise({onBack,historico,onUpdateHistorico,onUpdateMeta}) {
   const [loading,setLoading]=useState(false);const [result,setResult]=useState(null);const [tab,setTab]=useState("resumo");
   const [search,setSearch]=useState("");const [searchResults,setSearchResults]=useState([]);
+  const [rows,setRows]=useState(null);const [meta,setMeta]=useState(null);const [dbReady,setDbReady]=useState(false);
   const fileRef=useRef(null);
 
-  // Reduzir dados para guardar só colunas essenciais (Firebase tem limite de 1MB)
-  const slimRows=(rows)=>{
-    if(!rows||rows.length===0)return[];
-    const cols=Object.keys(rows[0]);
-    const essentialTerms=["processo","defini","projeto","subordem","designa","estado","concelho","pse","adjudica","data base fim","data fim","ltima atualiza","nome item","latitude","longitude","prioridade","tipo de processo","obs","dias est"];
-    const essentialCols=cols.filter(c=>{const cl=c.toLowerCase();return essentialTerms.some(t=>cl.includes(t));});
-    return rows.map(r=>{const slim={};essentialCols.forEach(c=>{if(r[c]!==null&&r[c]!==undefined&&r[c]!=="")slim[c]=r[c];});return slim;});
-  };
-
-  // Ao abrir, se já há dados guardados, mostrar a última análise
+  // Carregar dados do IndexedDB ao abrir
   useEffect(()=>{
-    if(estado&&estado.rows&&estado.rows.length>0&&!result){
-      const analysis=analyzeData(estado.rows,null);
-      setResult(analysis);
+    let cancelled=false;
+    Promise.all([window.excelDB.load("rows"),window.excelDB.load("meta")]).then(([savedRows,savedMeta])=>{
+      if(cancelled)return;
+      if(savedRows&&savedRows.length>0){
+        setRows(savedRows);
+        setMeta(savedMeta);
+        const analysis=analyzeRows(savedRows,null);
+        setResult(analysis);
+      }
+      setDbReady(true);
+    }).catch(()=>setDbReady(true));
+    return ()=>{cancelled=true;};
+  },[]);
+
+  // Análise a partir de linhas de dados
+  const analyzeRows=(data,prevData)=>{
+    const res={totais:{},estados:{},estadosOT:{},concelhos:{},novas:[],removidas:[],mudancas:[],alertas:[]};
+    const allKeys=data.length>0?Object.keys(data[0]):[];
+    const f=(...terms)=>allKeys.find(c=>{const cl=c.toLowerCase();return terms.some(t=>cl.includes(t.toLowerCase()));});
+    const COL={proc:f("Processo de Origem","processo"),dp:f("Defini"),sub:f("Subordem"),dsg:f("Designa"),ep:f("Estado Progest"),eot:f("Estado Ordem"),eoe:f("Estado Operacional Exec"),doe:f("Dias Est"),conc:f("Concelho"),ua:f("ltima Atualiza"),pse:f("PSE"),adj:f("Adjudica"),df:f("Data Base Fim","Data Fim"),tp:f("Tipo de Processo","Tipo Processo")};
+    const gv=(r,col)=>(col&&r[col]!=null)?String(r[col]):"";
+    const key=r=>gv(r,COL.proc)+"_"+gv(r,COL.dp)+"_"+gv(r,COL.sub);
+
+    res.totais.total=data.length;
+    res.totais.processos=new Set(data.map(r=>gv(r,COL.proc)).filter(Boolean)).size;
+    res.totais.dps=new Set(data.map(r=>gv(r,COL.dp)).filter(Boolean)).size;
+    data.forEach(r=>{const e=gv(r,COL.ep)||"Sem estado";res.estados[e]=(res.estados[e]||0)+1;});
+    data.forEach(r=>{const e=gv(r,COL.eot)||"Sem estado";res.estadosOT[e]=(res.estadosOT[e]||0)+1;});
+    data.forEach(r=>{const c=gv(r,COL.conc)||"Sem concelho";res.concelhos[c]=(res.concelhos[c]||0)+1;});
+    
+    const hoje=new Date();
+    data.forEach(r=>{
+      const ua=COL.ua?r[COL.ua]:null;
+      if(ua){const d=new Date(ua);const dias=Math.floor((hoje-d)/86400000);
+        if(dias>5&&gv(r,COL.eot).toLowerCase()==="pendente"){
+          res.alertas.push({processo:gv(r,COL.proc),dp:gv(r,COL.dp),designacao:gv(r,COL.dsg),dias,estado:gv(r,COL.ep),concelho:gv(r,COL.conc)});
+        }}});
+    res.alertas.sort((a,b)=>b.dias-a.dias);
+
+    if(prevData&&prevData.length>0){
+      const pKeys=prevData.length>0?Object.keys(prevData[0]):allKeys;
+      const pf=(...terms)=>pKeys.find(c=>{const cl=c.toLowerCase();return terms.some(t=>cl.includes(t.toLowerCase()));});
+      const PC={proc:pf("Processo de Origem","processo"),dp:pf("Defini"),sub:pf("Subordem"),dsg:pf("Designa"),ep:pf("Estado Progest"),eot:pf("Estado Ordem")};
+      const pgv=(r,col)=>(col&&r[col]!=null)?String(r[col]):"";
+      const pkey=r=>pgv(r,PC.proc)+"_"+pgv(r,PC.dp)+"_"+pgv(r,PC.sub);
+      const prevMap=new Map();prevData.forEach(r=>prevMap.set(pkey(r),r));
+      const currMap=new Map();data.forEach(r=>currMap.set(key(r),r));
+      data.forEach(r=>{if(!prevMap.has(key(r)))res.novas.push({processo:gv(r,COL.proc),dp:gv(r,COL.dp),designacao:gv(r,COL.dsg),estado:gv(r,COL.ep),concelho:gv(r,COL.conc)});});
+      prevData.forEach(r=>{if(!currMap.has(pkey(r)))res.removidas.push({processo:pgv(r,PC.proc),dp:pgv(r,PC.dp),designacao:pgv(r,PC.dsg),estado:pgv(r,PC.ep)});});
+      data.forEach(r=>{const prev=prevMap.get(key(r));if(prev){
+        const ce=gv(r,COL.ep),pe=pgv(prev,PC.ep);if(pe&&ce&&pe!==ce)res.mudancas.push({tipo:"estado_progest",processo:gv(r,COL.proc),dp:gv(r,COL.dp),de:pe,para:ce,designacao:gv(r,COL.dsg)});
+        const ceo=gv(r,COL.eot),peo=pgv(prev,PC.eot);if(peo&&ceo&&peo!==ceo)res.mudancas.push({tipo:"estado_ot",processo:gv(r,COL.proc),dp:gv(r,COL.dp),de:peo,para:ceo,designacao:gv(r,COL.dsg)});
+      }});
     }
-  },[estado]);
+    return res;
+  };
 
   const handleFile=async(e)=>{
     const file=e.target.files[0];if(!file)return;
     setLoading(true);
     try {
-      const rows=await parseExcel(file);
-      const prevRows=(estado&&estado.rows)?estado.rows:null;
-      const analysis=analyzeData(rows,prevRows);
+      const newRows=await parseExcel(file);
+      const prevRows=rows;
+      const analysis=analyzeRows(newRows,prevRows);
+      
+      // Guardar no IndexedDB (suporta centenas de MB)
+      await window.excelDB.save("rows",newRows);
+      const newMeta={d:new Date().toISOString(),f:file.name,total:newRows.length};
+      await window.excelDB.save("meta",newMeta);
+      
+      setRows(newRows);
+      setMeta(newMeta);
       setResult(analysis);
       setTab("resumo");
+      onUpdateMeta(newMeta);
 
-      // Guardar changelog no histórico
-      const entry={data:new Date().toISOString(),ficheiro:file.name,total:rows.length,novas:analysis.novas.length,removidas:analysis.removidas.length,mudancas:analysis.mudancas.length,alertas:analysis.alertas.length};
+      // Histórico (pequeno, vai pro Firebase)
+      const entry={data:new Date().toISOString(),ficheiro:file.name,total:newRows.length,novas:analysis.novas.length,removidas:analysis.removidas.length,mudancas:analysis.mudancas.length,alertas:analysis.alertas.length};
       onUpdateHistorico([entry,...(historico||[]).slice(0,29)]);
-
-      // Guardar estado atual com colunas reduzidas
-      const slim=slimRows(rows);
-      onUpdateEstado({rows:slim,dataUpload:new Date().toISOString(),ficheiro:file.name});
     } catch(err){alert("Erro ao ler ficheiro: "+err.message);}
     setLoading(false);
+    if(fileRef.current)fileRef.current.value="";
   };
 
   const doSearch=(q)=>{
     setSearch(q);
-    if(!q.trim()||!estado||!estado.rows){setSearchResults([]);return;}
+    if(!q.trim()||!rows||rows.length===0){setSearchResults([]);return;}
     const s=q.trim().toLowerCase();
-    const found=estado.rows.filter(r=>{
-      return Object.values(r).some(v=>(v===null||v===undefined)?"":v.toString().toLowerCase().includes(s));
-    });
+    const found=rows.filter(r=>Object.values(r).some(v=>v!=null&&String(v).toLowerCase().includes(s)));
     setSearchResults(found);
   };
 
@@ -1212,7 +1211,7 @@ function ExcelAnalise({onBack,estado,historico,onUpdateEstado,onUpdateHistorico}
           <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:20}}>📊</span><h1 style={{fontSize:17,fontWeight:800,color:"#fff",margin:0}}>Análise Excel</h1></div>
           <button onClick={()=>fileRef.current&&fileRef.current.click()} disabled={loading} style={{padding:"6px 12px",borderRadius:5,border:"none",background:"rgba(255,255,255,.18)",color:"#fff",fontWeight:700,fontSize:11,cursor:loading?"wait":"pointer"}}>{loading?"A analisar...":"📂 Carregar Excel"}</button>
         </div>
-        {estado&&<div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:4}}>Último upload: {estado.ficheiro} ({fmtD(estado.dataUpload)}) · Carrega novo Excel para ver alterações</div>}
+        {meta&&<div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:4}}>Último upload: {meta.f} ({fmtD(meta.d)}) · Carrega novo Excel para ver alterações</div>}
         <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={handleFile} style={{display:"none"}}/>
       </div>
 
@@ -1613,28 +1612,27 @@ function ReuniaoDetailPage({reuniao:init,folder,onBack,onSave,onDelete}) {
 
 /* ── APP ── */
 function App() {
-  const [obras,setObras]=useState([]);const [events,setEvents]=useState([]);const [todos,setTodos]=useState([]);const [contacts,setContacts]=useState([]);const [reunioes,setReunioes]=useState([]);const [excelEstado,setExcelEstado]=useState(null);const [excelHistorico,setExcelHistorico]=useState([]);
+  const [obras,setObras]=useState([]);const [events,setEvents]=useState([]);const [todos,setTodos]=useState([]);const [contacts,setContacts]=useState([]);const [reunioes,setReunioes]=useState([]);const [excelHistorico,setExcelHistorico]=useState([]);const [excelMeta,setExcelMeta]=useState(null);
   const [loaded,setLoaded]=useState(false);const [page,setPage]=useState("home");const [cT,setCT]=useState(null);const [cO,setCO]=useState(null);const [isN,setIsN]=useState(false);
   const [cFolder,setCFolder]=useState(null);const [cReuniao,setCReuniao]=useState(null);
   const notif=useNotifications(obras,events);
 
   useEffect(()=>{
-    let count=0;const done=()=>{count++;if(count>=7){setLoaded(true);}};
+    let count=0;const done=()=>{count++;if(count>=6){setLoaded(true);}};
     window.dataStore.load("obras",(d)=>{setObras(d);done();});
     window.dataStore.load("events",(d)=>{setEvents(d);done();});
     window.dataStore.load("todos",(d)=>{setTodos(d);done();});
     window.dataStore.load("contacts",(d)=>{setContacts(d);done();});
     window.dataStore.load("reunioes",(d)=>{setReunioes(d);done();});
-    window.dataStore.load("excelEstado",(d)=>{setExcelEstado(d&&d.rows?d:null);done();});
     window.dataStore.load("excelHistorico",(d)=>{setExcelHistorico(d);done();});
+    window.excelDB.load("meta").then(m=>{if(m)setExcelMeta(m);});
     const u1=window.dataStore.listen("obras",(d)=>setObras(d));
     const u2=window.dataStore.listen("events",(d)=>setEvents(d));
     const u3=window.dataStore.listen("todos",(d)=>setTodos(d));
     const u4=window.dataStore.listen("contacts",(d)=>setContacts(d));
     const u5=window.dataStore.listen("reunioes",(d)=>setReunioes(d));
-    const u6=window.dataStore.listen("excelEstado",(d)=>setExcelEstado(d&&d.rows?d:null));
     const u7=window.dataStore.listen("excelHistorico",(d)=>setExcelHistorico(d));
-    return ()=>{u1();u2();u3();u4();u5();u6();u7();};
+    return ()=>{u1();u2();u3();u4();u5();u7();};
   },[]);
 
   const pO=useCallback((n)=>{setObras(n);window.dataStore.save("obras",n);},[]);
@@ -1642,7 +1640,6 @@ function App() {
   const pT=useCallback((n)=>{setTodos(n);window.dataStore.save("todos",n);},[]);
   const pC=useCallback((n)=>{setContacts(n);window.dataStore.save("contacts",n);},[]);
   const pR=useCallback((n)=>{setReunioes(n);window.dataStore.save("reunioes",n);},[]);
-  const pXE=useCallback((n)=>{setExcelEstado(n);window.dataStore.save("excelEstado",n);},[]);
   const pXH=useCallback((n)=>{setExcelHistorico(n);window.dataStore.save("excelHistorico",n);},[]);
 
   const nH=()=>{setPage("home");setCT(null);setCO(null);setCFolder(null);setCReuniao(null);};
@@ -1669,13 +1666,13 @@ function App() {
 
   if (!loaded) return (<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100vh",background:"#0f172a",color:"#64748b",gap:12}}><div style={{fontSize:24,fontWeight:800,color:"#fff"}}>Gestor<span style={{color:"#f59e0b"}}>Obras</span></div><div style={{fontSize:12}}>A sincronizar...</div></div>);
 
-  if (page==="excel") return (<ExcelAnalise onBack={nH} estado={excelEstado} historico={excelHistorico} onUpdateEstado={pXE} onUpdateHistorico={pXH}/>);
+  if (page==="excel") return (<ExcelAnalise onBack={nH} historico={excelHistorico} onUpdateHistorico={pXH} onUpdateMeta={(m)=>setExcelMeta(m)}/>);
   if (page==="reuniao-detail"&&cReuniao&&cFolder) return (<ReuniaoDetailPage reuniao={cReuniao} folder={cFolder} onBack={()=>nFolder(cFolder)} onSave={(r)=>{updateReuniao(cFolder.id,r);setCReuniao(r);}} onDelete={(rid)=>{removeReuniao(cFolder.id,rid);nFolder(cFolder);}}/>);
   if (page==="reunioes-folder"&&cFolder) {const fresh=reunioes.find(f=>f.id===cFolder.id)||cFolder; return (<ReunioesFolder folder={fresh} onBack={nReun} onSelect={nReunDetail} onAdd={(r)=>addReuniao(fresh.id,r)} onRename={(nome)=>renameFolder(fresh.id,nome)} onDeleteFolder={()=>{removeFolder(fresh.id);nReun();}}/>);}
   if (page==="reunioes") return (<ReunioesLanding folders={reunioes} onBack={nH} onSelect={nFolder} onAdd={addFolder} onDelete={removeFolder}/>);
   if (page==="obra"&&cO) return (<ObraPage obra={cO} isNew={isN} onBack={()=>cT?nCat(cT):nH()} onSave={doSv} onDelete={doDl}/>);
   if (page==="cat"&&cT) return (<Category tipo={cT} obras={obras} onBack={nH} onSelect={nOb} onNew={()=>nNew(cT)}/>);
-  return (<Landing obras={obras} onType={nCat} onNew={()=>nNew()} onSelObra={nOA} onReunioes={nReun} onExcel={nExcel} reunioes={reunioes} excelEstado={excelEstado} events={events} onAddEv={e=>pE([...events,e])} onRemEv={id=>pE(events.filter(e=>e.id!==id))} todos={todos} onAddTd={t=>pT([...todos,t])} onTogTd={id=>pT(todos.map(t=>t.id===id?{...t,concluida:!t.concluida}:t))} onRemTd={id=>pT(todos.filter(t=>t.id!==id))} contacts={contacts} onAddCt={c=>pC([...contacts,c])} onRemCt={id=>pC(contacts.filter(c=>c.id!==id))} notif={notif}/>);
+  return (<Landing obras={obras} onType={nCat} onNew={()=>nNew()} onSelObra={nOA} onReunioes={nReun} onExcel={nExcel} reunioes={reunioes} excelMeta={excelMeta} events={events} onAddEv={e=>pE([...events,e])} onRemEv={id=>pE(events.filter(e=>e.id!==id))} todos={todos} onAddTd={t=>pT([...todos,t])} onTogTd={id=>pT(todos.map(t=>t.id===id?{...t,concluida:!t.concluida}:t))} onRemTd={id=>pT(todos.filter(t=>t.id!==id))} contacts={contacts} onAddCt={c=>pC([...contacts,c])} onRemCt={id=>pC(contacts.filter(c=>c.id!==id))} notif={notif}/>);
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
