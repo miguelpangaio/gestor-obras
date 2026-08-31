@@ -27,6 +27,7 @@ input,textarea,select,button{font-family:inherit}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 <script>
 firebase.initializeApp({apiKey:"AIzaSyDTZRizLtPeRf3T5e_4hv1QZnD9GddcWGs",authDomain:"gestor-obras-d996c.firebaseapp.com",projectId:"gestor-obras-d996c",storageBucket:"gestor-obras-d996c.firebasestorage.app",messagingSenderId:"314932781905",appId:"1:314932781905:web:1b2cf8b984f971b25d2970"});
@@ -565,7 +566,7 @@ function ContactsW({contacts,onAdd,onRemove}) {
 }
 
 /* ── LANDING ── */
-function Landing({obras,onType,onNew,onSelObra,events,onAddEv,onRemEv,todos,onAddTd,onTogTd,onRemTd,contacts,onAddCt,onRemCt,notif}) {
+function Landing({obras,onType,onNew,onSelObra,onReunioes,onAnalise,onExcel,reunioes,excelEstado,events,onAddEv,onRemEv,todos,onAddTd,onTogTd,onRemTd,contacts,onAddCt,onRemCt,notif}) {
   const a=obras.filter(o=>!o.arquivada);const active=a.filter(o=>!o.concluida);const done=a.filter(o=>o.concluida);
   const alerts=useMemo(()=>getAlerts(obras),[obras]);const activity=useMemo(()=>getActivity(obras),[obras]);
   const totalTarefas=active.reduce((s,o)=>s+(o.tarefas||[]).filter(t=>!t.concluida).length,0);
@@ -604,6 +605,36 @@ function Landing({obras,onType,onNew,onSelObra,events,onAddEv,onRemEv,todos,onAd
           {TIPOS.map(t=>{const m=TM[t];const ta=a.filter(o=>o.tipo===t);const ac2=ta.filter(o=>!o.concluida).length;const dn2=ta.filter(o=>o.concluida).length;const tot=ta.length;const pct=tot>0?Math.round((dn2/tot)*100):0;
             return (<div key={t} onClick={()=>onType(t)} style={{background:m.bg,borderRadius:11,padding:"16px 14px",cursor:"pointer",transition:"transform .15s"}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-2px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"}><div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}><span style={{fontSize:18}}>{m.icon}</span><span style={{fontSize:15,fontWeight:700,color:"#fff"}}>{t}</span></div><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}><div style={{fontSize:28,fontWeight:800,color:"#fff"}}>{ac2}</div><div style={{fontSize:10,color:"rgba(255,255,255,.5)",lineHeight:1.3}}>ativas<br/>{dn2} concl.</div></div><div style={{height:6,borderRadius:3,background:"rgba(255,255,255,.15)",overflow:"hidden"}}><div style={{height:6,borderRadius:3,background:"rgba(255,255,255,.6)",width:pct+"%"}}/></div></div>);
           })}
+        </div>
+
+        {/* Análise Diária */}
+        <div onClick={onAnalise} style={{background:"linear-gradient(135deg,#0c4a6e,#0ea5e9)",borderRadius:11,padding:"16px 14px",cursor:"pointer",marginBottom:10,transition:"transform .15s",display:"flex",alignItems:"center",gap:12}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-2px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"}>
+          <span style={{fontSize:24}}>📊</span>
+          <div style={{flex:1}}>
+            <div style={{fontSize:15,fontWeight:700,color:"#fff"}}>Análise Diária</div>
+            <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:1}}>Carrega o Excel e vê o que mudou</div>
+          </div>
+          <span style={{color:"rgba(255,255,255,.4)",fontSize:16}}>›</span>
+        </div>
+
+        {/* Reuniões */}
+        <div onClick={onReunioes} style={{background:"linear-gradient(135deg,#312e81,#6366f1)",borderRadius:11,padding:"16px 14px",cursor:"pointer",marginBottom:12,transition:"transform .15s",display:"flex",alignItems:"center",gap:12}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-2px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"}>
+          <span style={{fontSize:24}}>📋</span>
+          <div style={{flex:1}}>
+            <div style={{fontSize:15,fontWeight:700,color:"#fff"}}>Reuniões</div>
+            <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:1}}>{(reunioes||[]).length} {(reunioes||[]).length===1?"pasta":"pastas"} · {(reunioes||[]).reduce((s,f)=>(s+(f.reunioes||[]).length),0)} reuniões</div>
+          </div>
+          <span style={{color:"rgba(255,255,255,.4)",fontSize:16}}>›</span>
+        </div>
+
+        {/* Análise Excel */}
+        <div onClick={onExcel} style={{background:"linear-gradient(135deg,#065f46,#10b981)",borderRadius:11,padding:"16px 14px",cursor:"pointer",marginBottom:12,transition:"transform .15s",display:"flex",alignItems:"center",gap:12}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-2px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"}>
+          <span style={{fontSize:24}}>📊</span>
+          <div style={{flex:1}}>
+            <div style={{fontSize:15,fontWeight:700,color:"#fff"}}>Análise Excel</div>
+            <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:1}}>{excelEstado?"Última análise: "+fmtD(excelEstado.dataUpload||""):"Carrega o Excel para analisar"}</div>
+          </div>
+          <span style={{color:"rgba(255,255,255,.4)",fontSize:16}}>›</span>
         </div>
 
         {/* Activity */}
@@ -762,44 +793,768 @@ function ObraPage({obra:init,onBack,onSave,onDelete,isNew}) {
   );
 }
 
+/* ── ANÁLISE EXCEL ── */
+function parseExcelData(wb) {
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const raw = XLSX.utils.sheet_to_json(ws, {defval:""});
+  return raw.map(row => {
+    const processo = String(row["Nº de Processo de Origem"]||"").trim();
+    const dp = String(row["Definição do Projeto"]||"").trim();
+    const subordem = String(row["Subordem"]||"").trim();
+    const designacao = String(row["Designação Subordem"]||"").trim();
+    const dataBaseFim = row["Data Base Fim"]||"";
+    const estadoSistema = String(row["Estado Sistema"]||"").trim();
+    const estadoProgest = String(row["Estado Progest"]||"").trim();
+    const estadoOT = String(row["Estado Ordem de Trabalho"]||"").trim();
+    const pse = String(row["PSE"]||"").trim();
+    const concelho = String(row["Concelho"]||"").trim();
+    const tecnico = String(row["Técnico AO"]||"").trim();
+    const adjudicacao = String(row["Adjudicação"]||"").trim();
+    const ultimaAtualizacao = row["Última Atualização Ordem"]||"";
+    const planeadoMO = parseFloat(row["Planeado MO €"])||0;
+    const planeadoMat = parseFloat(row["Planeado Mat. €"])||0;
+    const realizadoMO = parseFloat(row["Realizado MO €"])||0;
+    const realizadoMat = parseFloat(row["Realizado Mat. €"])||0;
+    const lat = row["Latitude"]||"";
+    const lng = row["Longitude"]||"";
+    const estOpExec = String(row["Estado Operacional Execução"]||"").trim();
+    const diasEstOpExec = parseInt(row["Dias Est. Op. Execução"])||0;
+    const estOpLic = String(row["Estado Operacional Aut. e Lic."]||"").trim();
+    const diasEstOpLic = parseInt(row["Dias Est. Op. Aut. e Lic."])||0;
+    const nOTs = parseInt(row["Nº OTs Associadas"])||0;
+    const tipoProcesso = String(row["Tipo de Processo"]||"").trim();
+    const dataCompromisso = row["Data Compromisso"]||"";
+    return {processo,dp,subordem,designacao,dataBaseFim,estadoSistema,estadoProgest,estadoOT,pse,concelho,tecnico,adjudicacao,ultimaAtualizacao,planeadoMO,planeadoMat,realizadoMO,realizadoMat,lat,lng,estOpExec,diasEstOpExec,estOpLic,diasEstOpLic,nOTs,tipoProcesso,dataCompromisso};
+  });
+}
+
+function compareData(current, previous) {
+  const changes = {novos:[],removidos:[],estadoMudou:[],otParadas:[],resumo:{}};
+  const prevMap = {};
+  (previous||[]).forEach(r => { prevMap[r.subordem] = r; });
+  const currMap = {};
+  current.forEach(r => { currMap[r.subordem] = r; });
+
+  // Novos
+  current.forEach(r => { if (!prevMap[r.subordem]) changes.novos.push(r); });
+  // Removidos
+  (previous||[]).forEach(r => { if (!currMap[r.subordem]) changes.removidos.push(r); });
+  // Mudanças de estado
+  current.forEach(r => {
+    const prev = prevMap[r.subordem];
+    if (prev) {
+      const mudancas = [];
+      if (prev.estadoOT !== r.estadoOT) mudancas.push({campo:"Estado OT",de:prev.estadoOT,para:r.estadoOT});
+      if (prev.estadoProgest !== r.estadoProgest) mudancas.push({campo:"Estado Progest",de:prev.estadoProgest,para:r.estadoProgest});
+      if (prev.estOpExec !== r.estOpExec && (prev.estOpExec||r.estOpExec)) mudancas.push({campo:"Estado Op. Execução",de:prev.estOpExec||"(vazio)",para:r.estOpExec||"(vazio)"});
+      if (prev.adjudicacao !== r.adjudicacao) mudancas.push({campo:"Adjudicação",de:prev.adjudicacao,para:r.adjudicacao});
+      if (mudancas.length > 0) changes.estadoMudou.push({row:r,mudancas});
+    }
+  });
+
+  // OTs paradas (estado Pendente há muitos dias sem atualização)
+  const hoje = new Date();
+  current.forEach(r => {
+    if (r.estadoOT === "Pendente" && r.ultimaAtualizacao) {
+      let lastUpdate;
+      if (typeof r.ultimaAtualizacao === "string" && r.ultimaAtualizacao.includes("-")) {
+        lastUpdate = new Date(r.ultimaAtualizacao);
+      } else if (typeof r.ultimaAtualizacao === "number") {
+        lastUpdate = new Date((r.ultimaAtualizacao - 25569) * 86400000);
+      } else {
+        lastUpdate = new Date(r.ultimaAtualizacao);
+      }
+      if (!isNaN(lastUpdate.getTime())) {
+        const dias = Math.floor((hoje - lastUpdate) / 86400000);
+        if (dias >= 5) changes.otParadas.push({...r, diasParada: dias});
+      }
+    }
+  });
+  changes.otParadas.sort((a,b) => b.diasParada - a.diasParada);
+
+  // Resumo
+  const estadosOT = {};
+  const estadosProgest = {};
+  const concelhos = {};
+  current.forEach(r => {
+    estadosOT[r.estadoOT] = (estadosOT[r.estadoOT]||0) + 1;
+    if (r.estadoProgest) estadosProgest[r.estadoProgest] = (estadosProgest[r.estadoProgest]||0) + 1;
+    if (r.concelho) concelhos[r.concelho] = (concelhos[r.concelho]||0) + 1;
+  });
+  changes.resumo = {total:current.length, estadosOT, estadosProgest, concelhos};
+  return changes;
+}
+
+function AnalisePage({onBack}) {
+  const [loading,setLoading]=useState(false);
+  const [data,setData]=useState(null);
+  const [prevData,setPrevData]=useState(null);
+  const [changes,setChanges]=useState(null);
+  const [lastDate,setLastDate]=useState(null);
+  const [tab,setTab]=useState("resumo");
+  const fileRef=useRef(null);
+
+  useEffect(()=>{
+    window.dataStore.load("analise_atual",(d)=>{if(d&&d.data){setPrevData(d.data);setLastDate(d.date);}});
+  },[]);
+
+  const handleFile=(e)=>{
+    const file=e.target.files[0];if(!file)return;
+    setLoading(true);
+    const reader=new FileReader();
+    reader.onload=(evt)=>{
+      try{
+        const wb=XLSX.read(evt.target.result,{type:"array",cellDates:true});
+        const parsed=parseExcelData(wb);
+        setData(parsed);
+        const comp=compareData(parsed,prevData);
+        setChanges(comp);
+        // Save current as new baseline
+        const today=new Date().toISOString().slice(0,10);
+        window.dataStore.save("analise_atual",{data:parsed,date:today,filename:file.name});
+        // Save to changelog
+        window.dataStore.load("analise_changelog",(existing)=>{
+          const log=existing||[];
+          log.unshift({date:today,filename:file.name,novos:comp.novos.length,removidos:comp.removidos.length,mudancas:comp.estadoMudou.length,otParadas:comp.otParadas.length,total:parsed.length});
+          if(log.length>30)log.length=30;
+          window.dataStore.save("analise_changelog",log);
+        });
+      }catch(err){alert("Erro ao ler ficheiro: "+err.message);}
+      setLoading(false);
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const tb={padding:"5px 10px",borderRadius:5,border:"none",fontSize:10,fontWeight:600,cursor:"pointer"};
+  const cardS={background:"#1e293b",borderRadius:8,padding:12,border:"1px solid #334155",marginBottom:8};
+
+  return (
+    <div style={{minHeight:"100vh",background:"#0f172a"}}>
+      <div style={{background:"linear-gradient(135deg,#0c4a6e,#0ea5e9)",padding:"14px 24px 18px"}}>
+        <BackBtn onClick={onBack} label="Início"/>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:3}}>
+          <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:20}}>📊</span><h1 style={{fontSize:17,fontWeight:800,color:"#fff",margin:0}}>Análise Diária</h1></div>
+        </div>
+        {lastDate&&<div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:4}}>Última análise: {fmtD(lastDate)}</div>}
+      </div>
+      <div style={{padding:"12px 24px 28px"}}>
+        {/* Upload */}
+        <div style={{...cardS,textAlign:"center",padding:20,borderStyle:data?"solid":"dashed",borderColor:data?"#0ea5e930":"#475569"}}>
+          <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={handleFile} style={{display:"none"}}/>
+          {loading?(<div style={{color:"#0ea5e9",fontSize:13,fontWeight:600}}>⏳ A analisar...</div>):(
+            <div>
+              <button onClick={()=>fileRef.current.click()} style={{padding:"10px 24px",borderRadius:8,border:"2px solid #0ea5e9",background:"transparent",color:"#0ea5e9",fontSize:13,fontWeight:700,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6}}>📁 Carregar Excel</button>
+              <div style={{fontSize:10,color:"#64748b",marginTop:6}}>Arrasta ou seleciona o ficheiro CP_ListaExecução</div>
+              {data&&<div style={{fontSize:11,color:"#16a34a",marginTop:6,fontWeight:600}}>✅ {data.length} registos carregados</div>}
+            </div>
+          )}
+        </div>
+
+        {/* Results */}
+        {changes&&(<div>
+          {/* Change Summary Cards */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:12}}>
+            {[
+              {n:changes.novos.length,l:"Novos",icon:"🆕",color:changes.novos.length>0?"#16a34a":"#64748b"},
+              {n:changes.estadoMudou.length,l:"Alterados",icon:"🔄",color:changes.estadoMudou.length>0?"#f59e0b":"#64748b"},
+              {n:changes.removidos.length,l:"Removidos",icon:"📤",color:changes.removidos.length>0?"#dc2626":"#64748b"},
+              {n:changes.otParadas.length,l:"OTs Paradas",icon:"⚠️",color:changes.otParadas.length>0?"#dc2626":"#64748b"}
+            ].map((k,i)=>(<div key={i} style={{background:"#1e293b",borderRadius:8,padding:"10px 8px",border:"1px solid #334155",textAlign:"center"}}><div style={{fontSize:14,marginBottom:2}}>{k.icon}</div><div style={{fontSize:20,fontWeight:800,color:k.color}}>{k.n}</div><div style={{fontSize:9,color:"#64748b",fontWeight:500}}>{k.l}</div></div>))}
+          </div>
+
+          {/* Tabs */}
+          <div style={{display:"flex",gap:3,marginBottom:10,background:"#1e293b",borderRadius:6,padding:3}}>
+            {[{k:"resumo",l:"Resumo"},{k:"novos",l:"Novos ("+changes.novos.length+")"},{k:"mudancas",l:"Alterações ("+changes.estadoMudou.length+")"},{k:"paradas",l:"OTs Paradas ("+changes.otParadas.length+")"},{k:"removidos",l:"Removidos ("+changes.removidos.length+")"}].map(({k,l})=>(<button key={k} onClick={()=>setTab(k)} style={{...tb,background:tab===k?"#0ea5e9":"transparent",color:tab===k?"#fff":"#94a3b8"}}>{l}</button>))}
+          </div>
+
+          {/* Tab Content */}
+          {tab==="resumo"&&(<div>
+            <div style={cardS}>
+              <div style={{fontSize:12,fontWeight:700,color:"#fff",marginBottom:8}}>📋 Totais por Estado OT</div>
+              {Object.entries(changes.resumo.estadosOT).sort((a,b)=>b[1]-a[1]).map(([e,c])=>(<div key={e} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #293548"}}><span style={{fontSize:11,color:"#e2e8f0"}}>{e||"(vazio)"}</span><span style={{fontSize:11,fontWeight:700,color:"#0ea5e9"}}>{c}</span></div>))}
+            </div>
+            <div style={cardS}>
+              <div style={{fontSize:12,fontWeight:700,color:"#fff",marginBottom:8}}>📊 Por Estado Progest</div>
+              <div style={{maxHeight:200,overflowY:"auto"}}>{Object.entries(changes.resumo.estadosProgest).sort((a,b)=>b[1]-a[1]).map(([e,c])=>(<div key={e} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #293548"}}><span style={{fontSize:10,color:"#e2e8f0"}}>{e}</span><span style={{fontSize:11,fontWeight:700,color:"#0ea5e9"}}>{c}</span></div>))}</div>
+            </div>
+            <div style={cardS}>
+              <div style={{fontSize:12,fontWeight:700,color:"#fff",marginBottom:8}}>📍 Por Concelho</div>
+              {Object.entries(changes.resumo.concelhos).sort((a,b)=>b[1]-a[1]).map(([e,c])=>(<div key={e} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #293548"}}><span style={{fontSize:11,color:"#e2e8f0"}}>{e}</span><span style={{fontSize:11,fontWeight:700,color:"#0ea5e9"}}>{c}</span></div>))}
+            </div>
+          </div>)}
+
+          {tab==="novos"&&(<div>
+            {changes.novos.length===0?(<div style={{...cardS,textAlign:"center",color:"#64748b",fontSize:11}}>Sem registos novos</div>):(
+              changes.novos.map((r,i)=>(<div key={i} style={cardS}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontSize:12,fontWeight:700,color:"#16a34a",fontFamily:"monospace"}}>{r.processo}</span>
+                  <span style={{fontSize:10,color:"#64748b"}}>{r.concelho}</span>
+                </div>
+                <div style={{fontSize:11,color:"#e2e8f0",marginBottom:2}}>{r.designacao}</div>
+                <div style={{display:"flex",gap:8,fontSize:10,color:"#94a3b8",flexWrap:"wrap"}}>
+                  <span>DP: {r.dp}</span><span>OT: {r.estadoOT}</span><span>PSE: {r.pse}</span>
+                </div>
+              </div>))
+            )}
+          </div>)}
+
+          {tab==="mudancas"&&(<div>
+            {changes.estadoMudou.length===0?(<div style={{...cardS,textAlign:"center",color:"#64748b",fontSize:11}}>Sem alterações de estado</div>):(
+              changes.estadoMudou.map((item,i)=>(<div key={i} style={cardS}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontSize:12,fontWeight:700,color:"#f59e0b",fontFamily:"monospace"}}>{item.row.processo}</span>
+                  <span style={{fontSize:10,color:"#64748b"}}>{item.row.concelho}</span>
+                </div>
+                <div style={{fontSize:11,color:"#e2e8f0",marginBottom:4}}>{item.row.designacao}</div>
+                {item.mudancas.map((m,j)=>(<div key={j} style={{fontSize:10,padding:"3px 8px",background:"#f59e0b10",borderRadius:4,marginBottom:2,display:"flex",gap:4,alignItems:"center"}}>
+                  <span style={{color:"#94a3b8"}}>{m.campo}:</span>
+                  <span style={{color:"#dc2626",textDecoration:"line-through"}}>{m.de||"(vazio)"}</span>
+                  <span style={{color:"#64748b"}}>→</span>
+                  <span style={{color:"#16a34a",fontWeight:600}}>{m.para||"(vazio)"}</span>
+                </div>))}
+              </div>))
+            )}
+          </div>)}
+
+          {tab==="paradas"&&(<div>
+            {changes.otParadas.length===0?(<div style={{...cardS,textAlign:"center",color:"#64748b",fontSize:11}}>Sem OTs paradas há mais de 5 dias</div>):(
+              changes.otParadas.map((r,i)=>(<div key={i} style={{...cardS,borderLeft:"3px solid "+(r.diasParada>=15?"#dc2626":r.diasParada>=10?"#f59e0b":"#64748b")}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontSize:12,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{r.processo}</span>
+                  <span style={{fontSize:11,fontWeight:800,color:r.diasParada>=15?"#dc2626":r.diasParada>=10?"#f59e0b":"#94a3b8"}}>{r.diasParada} dias</span>
+                </div>
+                <div style={{fontSize:11,color:"#e2e8f0",marginBottom:2}}>{r.designacao}</div>
+                <div style={{display:"flex",gap:8,fontSize:10,color:"#94a3b8",flexWrap:"wrap"}}>
+                  <span>DP: {r.dp}</span><span>PSE: {r.pse}</span><span>📍 {r.concelho}</span><span>Adj: {r.adjudicacao}</span>
+                </div>
+              </div>))
+            )}
+          </div>)}
+
+          {tab==="removidos"&&(<div>
+            {changes.removidos.length===0?(<div style={{...cardS,textAlign:"center",color:"#64748b",fontSize:11}}>Sem registos removidos</div>):(
+              changes.removidos.map((r,i)=>(<div key={i} style={cardS}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontSize:12,fontWeight:700,color:"#dc2626",fontFamily:"monospace"}}>{r.processo}</span>
+                  <span style={{fontSize:10,color:"#64748b"}}>{r.concelho}</span>
+                </div>
+                <div style={{fontSize:11,color:"#e2e8f0",marginBottom:2}}>{r.designacao}</div>
+                <div style={{display:"flex",gap:8,fontSize:10,color:"#94a3b8"}}><span>Estado: {r.estadoOT}</span><span>DP: {r.dp}</span></div>
+              </div>))
+            )}
+          </div>)}
+        </div>)}
+
+        {!changes&&!loading&&(<div style={{...cardS,textAlign:"center",padding:24}}>
+          <div style={{fontSize:28,marginBottom:8}}>📊</div>
+          <div style={{fontSize:12,color:"#e2e8f0",fontWeight:600}}>Carrega o ficheiro Excel para começar</div>
+          <div style={{fontSize:10,color:"#64748b",marginTop:4}}>A análise compara com o carregamento anterior e mostra o que mudou</div>
+          {lastDate&&<div style={{fontSize:10,color:"#0ea5e9",marginTop:8}}>Último carregamento: {fmtD(lastDate)}</div>}
+        </div>)}
+      </div>
+    </div>
+  );
+}
+
+/* ── EXCEL ANALYSIS ── */
+function parseExcel(file) {
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=(e)=>{
+      try {
+        const wb=XLSX.read(e.target.result,{type:"array",cellDates:true});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const data=XLSX.utils.sheet_to_json(ws,{defval:""});
+        resolve(data);
+      } catch(err){reject(err);}
+    };
+    reader.onerror=reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function analyzeData(rows,prevRows) {
+  const result={totais:{},estados:{},estadosOT:{},concelhos:{},novas:[],removidas:[],mudancas:[],alertas:[],resumo:""};
+  const key=r=>(r["Nº de Processo de Origem"]||"")+"_"+(r["Definição do Projeto"]||"")+"_"+(r["Subordem"]||"");
+
+  // Totais
+  result.totais.total=rows.length;
+  result.totais.processos=new Set(rows.map(r=>r["Nº de Processo de Origem"])).size;
+  result.totais.dps=new Set(rows.map(r=>r["Definição do Projeto"]).filter(Boolean)).size;
+
+  // Estados Progest
+  rows.forEach(r=>{const e=r["Estado Progest"]||"Sem estado";result.estados[e]=(result.estados[e]||0)+1;});
+
+  // Estados OT
+  rows.forEach(r=>{const e=r["Estado Ordem de Trabalho"]||"Sem estado";result.estadosOT[e]=(result.estadosOT[e]||0)+1;});
+
+  // Concelhos
+  rows.forEach(r=>{const c=r["Concelho"]||"Sem concelho";result.concelhos[c]=(result.concelhos[c]||0)+1;});
+
+  // Alertas - OTs pendentes com última atualização antiga
+  const hoje=new Date();
+  rows.forEach(r=>{
+    const ultimaAtt=r["Última Atualização Ordem"];
+    if(ultimaAtt){
+      const d=new Date(ultimaAtt);
+      const dias=Math.floor((hoje-d)/86400000);
+      if(dias>5&&(r["Estado Ordem de Trabalho"]||"").toLowerCase()==="pendente"){
+        result.alertas.push({tipo:"ot_parada",processo:r["Nº de Processo de Origem"]||"",dp:r["Definição do Projeto"]||"",designacao:r["Designação Subordem"]||"",dias:dias,estado:r["Estado Progest"]||"",concelho:r["Concelho"]||""});
+      }
+    }
+  });
+  result.alertas.sort((a,b)=>b.dias-a.dias);
+
+  // Comparação com dia anterior
+  if(prevRows&&prevRows.length>0){
+    const prevMap=new Map();prevRows.forEach(r=>prevMap.set(key(r),r));
+    const currMap=new Map();rows.forEach(r=>currMap.set(key(r),r));
+
+    // Novas (estão no current mas não no prev)
+    rows.forEach(r=>{const k=key(r);if(!prevMap.has(k)){result.novas.push({processo:r["Nº de Processo de Origem"]||"",dp:r["Definição do Projeto"]||"",designacao:r["Designação Subordem"]||"",estado:r["Estado Progest"]||"",concelho:r["Concelho"]||""});}});
+
+    // Removidas
+    prevRows.forEach(r=>{const k=key(r);if(!currMap.has(k)){result.removidas.push({processo:r["Nº de Processo de Origem"]||"",dp:r["Definição do Projeto"]||"",designacao:r["Designação Subordem"]||"",estado:r["Estado Progest"]||""});}});
+
+    // Mudanças de estado
+    rows.forEach(r=>{const k=key(r);const prev=prevMap.get(k);if(prev){
+      if(prev["Estado Progest"]!==r["Estado Progest"]){result.mudancas.push({tipo:"estado_progest",processo:r["Nº de Processo de Origem"]||"",dp:r["Definição do Projeto"]||"",de:prev["Estado Progest"]||"",para:r["Estado Progest"]||"",designacao:r["Designação Subordem"]||""});}
+      if(prev["Estado Ordem de Trabalho"]!==r["Estado Ordem de Trabalho"]){result.mudancas.push({tipo:"estado_ot",processo:r["Nº de Processo de Origem"]||"",dp:r["Definição do Projeto"]||"",de:prev["Estado Ordem de Trabalho"]||"",para:r["Estado Ordem de Trabalho"]||"",designacao:r["Designação Subordem"]||""});}
+    }});
+  }
+
+  return result;
+}
+
+function ExcelAnalise({onBack,estado,historico,onUpdateEstado,onUpdateHistorico}) {
+  const [loading,setLoading]=useState(false);const [result,setResult]=useState(null);const [tab,setTab]=useState("resumo");
+  const fileRef=useRef(null);
+
+  const handleFile=async(e)=>{
+    const file=e.target.files[0];if(!file)return;
+    setLoading(true);
+    try {
+      const rows=await parseExcel(file);
+      const prevRows=(estado&&estado.rows)?estado.rows:null;
+      const analysis=analyzeData(rows,prevRows);
+      setResult(analysis);
+
+      // Guardar changelog no histórico
+      const entry={data:new Date().toISOString(),ficheiro:file.name,total:rows.length,novas:analysis.novas.length,removidas:analysis.removidas.length,mudancas:analysis.mudancas.length,alertas:analysis.alertas.length};
+      onUpdateHistorico([entry,...(historico||[]).slice(0,29)]);
+
+      // Guardar estado atual (sobrescrever)
+      onUpdateEstado({rows:rows,dataUpload:new Date().toISOString(),ficheiro:file.name});
+    } catch(err){alert("Erro ao ler ficheiro: "+err.message);}
+    setLoading(false);
+  };
+
+  const tabBtn=(k,label,icon,count)=>{
+    const active=tab===k;
+    return (<button key={k} onClick={()=>setTab(k)} style={{padding:"6px 10px",borderRadius:6,border:"1px solid "+(active?"#10b981":"#334155"),background:active?"#10b98120":"transparent",color:active?"#10b981":"#94a3b8",fontSize:10,fontWeight:active?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>{icon} {label}{count!==undefined&&<span style={{background:count>0?(active?"#10b981":"#475569"):"#334155",color:count>0?"#fff":"#64748b",padding:"0 5px",borderRadius:8,fontSize:9,fontWeight:700}}>{count}</span>}</button>);
+  };
+
+  return (
+    <div style={{minHeight:"100vh",background:"#0f172a"}}>
+      <div style={{background:"linear-gradient(135deg,#065f46,#10b981)",padding:"14px 24px 18px"}}>
+        <BackBtn onClick={onBack} label="Início"/>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:3}}>
+          <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:20}}>📊</span><h1 style={{fontSize:17,fontWeight:800,color:"#fff",margin:0}}>Análise Excel</h1></div>
+          <button onClick={()=>fileRef.current&&fileRef.current.click()} disabled={loading} style={{padding:"6px 12px",borderRadius:5,border:"none",background:"rgba(255,255,255,.18)",color:"#fff",fontWeight:700,fontSize:11,cursor:loading?"wait":"pointer"}}>{loading?"A analisar...":"📂 Carregar Excel"}</button>
+        </div>
+        {estado&&<div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:4}}>Último: {estado.ficheiro} ({fmtD(estado.dataUpload)})</div>}
+        <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={handleFile} style={{display:"none"}}/>
+      </div>
+
+      <div style={{padding:"12px 20px 28px"}}>
+        {!result&&!estado&&(<div style={{textAlign:"center",padding:"50px 16px",color:"#64748b"}}><div style={{fontSize:48,marginBottom:12}}>📊</div><div style={{fontSize:14,fontWeight:600,color:"#94a3b8"}}>Carrega o teu Excel diário</div><div style={{fontSize:11,marginTop:6,color:"#475569",maxWidth:280,margin:"6px auto 0"}}>Arrasta o ficheiro CP_ListaExecução ou clica no botão acima. A análise compara com o dia anterior automaticamente.</div>
+          <button onClick={()=>fileRef.current&&fileRef.current.click()} style={{marginTop:16,padding:"10px 24px",borderRadius:8,border:"2px solid #10b981",background:"transparent",color:"#10b981",fontSize:12,fontWeight:700,cursor:"pointer"}}>📂 Selecionar ficheiro</button>
+        </div>)}
+
+        {result&&(<div>
+          {/* Tabs */}
+          <div style={{display:"flex",gap:4,marginBottom:12,flexWrap:"wrap"}}>
+            {tabBtn("resumo","Resumo","📋")}
+            {tabBtn("mudancas","Alterações","🔄",result.mudancas.length)}
+            {tabBtn("novas","Novas","🆕",result.novas.length)}
+            {tabBtn("alertas","Alertas","⚠️",result.alertas.length)}
+            {tabBtn("historico","Histórico","📅")}
+          </div>
+
+          {/* Resumo */}
+          {tab==="resumo"&&(<div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12}}>
+              {[{n:result.totais.total,l:"Registos",c:"#3b82f6"},{n:result.totais.processos,l:"Processos",c:"#8b5cf6"},{n:result.totais.dps,l:"DPs",c:"#f59e0b"},{n:result.novas.length,l:"Novas",c:"#10b981"},{n:result.mudancas.length,l:"Alterações",c:"#f97316"},{n:result.alertas.length,l:"Alertas",c:result.alertas.length>0?"#dc2626":"#64748b"}].map((k,i)=>(
+                <div key={i} style={{background:"#1e293b",borderRadius:8,padding:"10px 10px",border:"1px solid #334155",textAlign:"center"}}>
+                  <div style={{fontSize:22,fontWeight:800,color:k.c}}>{k.n}</div>
+                  <div style={{fontSize:9,color:"#64748b",fontWeight:500,marginTop:1}}>{k.l}</div>
+                </div>
+              ))}
+            </div>
+
+            <WBox style={{marginBottom:10}}>
+              <WTitle icon="📊" text="Estados Progest"/>
+              <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                {Object.entries(result.estados).sort((a,b)=>b[1]-a[1]).map(([e,c])=>(
+                  <div key={e} style={{display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{flex:1,fontSize:11,color:"#e2e8f0",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{e}</div>
+                    <div style={{width:80,height:6,borderRadius:3,background:"#334155",flexShrink:0}}><div style={{height:6,borderRadius:3,background:"#10b981",width:Math.round(c/result.totais.total*100)+"%"}}/></div>
+                    <div style={{fontSize:11,fontWeight:700,color:"#10b981",minWidth:24,textAlign:"right"}}>{c}</div>
+                  </div>
+                ))}
+              </div>
+            </WBox>
+
+            <WBox style={{marginBottom:10}}>
+              <WTitle icon="📍" text="Por Concelho"/>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                {Object.entries(result.concelhos).sort((a,b)=>b[1]-a[1]).map(([c,n])=>(
+                  <div key={c} style={{background:"#0f172a",padding:"6px 10px",borderRadius:6,border:"1px solid #334155"}}>
+                    <div style={{fontSize:11,fontWeight:700,color:"#fff"}}>{n}</div>
+                    <div style={{fontSize:9,color:"#64748b"}}>{c}</div>
+                  </div>
+                ))}
+              </div>
+            </WBox>
+
+            <WBox>
+              <WTitle icon="🔄" text="Estados OT"/>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                {Object.entries(result.estadosOT).sort((a,b)=>b[1]-a[1]).map(([e,n])=>{
+                  const colors={"Pendente":"#f59e0b","Agendada":"#3b82f6","No Local":"#10b981","Suspensa":"#dc2626","Fechada":"#64748b"};
+                  return (<div key={e} style={{background:(colors[e]||"#64748b")+"15",padding:"6px 10px",borderRadius:6,border:"1px solid "+(colors[e]||"#64748b")+"30"}}>
+                    <div style={{fontSize:14,fontWeight:800,color:colors[e]||"#94a3b8"}}>{n}</div>
+                    <div style={{fontSize:9,color:colors[e]||"#64748b"}}>{e}</div>
+                  </div>);
+                })}
+              </div>
+            </WBox>
+          </div>)}
+
+          {/* Mudanças */}
+          {tab==="mudancas"&&(<div>
+            {result.mudancas.length===0?(<WBox><div style={{textAlign:"center",padding:16,color:"#64748b"}}><div style={{fontSize:24,marginBottom:6}}>✅</div><div style={{fontSize:11}}>Sem alterações de estado</div></div></WBox>):(
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {result.mudancas.map((m,i)=>(
+                  <WBox key={i} style={{padding:10}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                      <span style={{fontSize:12}}>{m.tipo==="estado_progest"?"📊":"🔧"}</span>
+                      <span style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{m.processo}</span>
+                      <span style={{fontSize:9,color:"#64748b"}}>{m.dp}</span>
+                    </div>
+                    <div style={{fontSize:10,color:"#94a3b8",marginBottom:3}}>{m.designacao}</div>
+                    <div style={{display:"flex",alignItems:"center",gap:6,fontSize:10}}>
+                      <span style={{color:"#f87171",background:"#dc262615",padding:"2px 6px",borderRadius:4}}>{m.de||"(vazio)"}</span>
+                      <span style={{color:"#64748b"}}>→</span>
+                      <span style={{color:"#34d399",background:"#10b98115",padding:"2px 6px",borderRadius:4}}>{m.para||"(vazio)"}</span>
+                    </div>
+                  </WBox>
+                ))}
+              </div>
+            )}
+          </div>)}
+
+          {/* Novas */}
+          {tab==="novas"&&(<div>
+            {result.novas.length===0&&result.removidas.length===0?(<WBox><div style={{textAlign:"center",padding:16,color:"#64748b"}}><div style={{fontSize:24,marginBottom:6}}>📋</div><div style={{fontSize:11}}>Sem entradas novas ou removidas</div></div></WBox>):(
+              <div>
+                {result.novas.length>0&&(<div style={{marginBottom:12}}><div style={{fontSize:12,fontWeight:700,color:"#10b981",marginBottom:6}}>🆕 Novas ({result.novas.length})</div>
+                  {result.novas.map((n,i)=>(<WBox key={i} style={{padding:10,marginBottom:6}}>
+                    <div style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{n.processo} <span style={{color:"#64748b",fontWeight:400}}>{n.dp}</span></div>
+                    <div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>{n.designacao}</div>
+                    <div style={{display:"flex",gap:6,marginTop:3,fontSize:9,color:"#64748b"}}><span>{n.estado}</span><span>📍 {n.concelho}</span></div>
+                  </WBox>))}
+                </div>)}
+                {result.removidas.length>0&&(<div><div style={{fontSize:12,fontWeight:700,color:"#dc2626",marginBottom:6}}>🗑 Removidas ({result.removidas.length})</div>
+                  {result.removidas.map((n,i)=>(<WBox key={i} style={{padding:10,marginBottom:6,opacity:.6}}>
+                    <div style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{n.processo} <span style={{color:"#64748b",fontWeight:400}}>{n.dp}</span></div>
+                    <div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>{n.designacao}</div>
+                  </WBox>))}
+                </div>)}
+              </div>
+            )}
+          </div>)}
+
+          {/* Alertas */}
+          {tab==="alertas"&&(<div>
+            {result.alertas.length===0?(<WBox><div style={{textAlign:"center",padding:16,color:"#64748b"}}><div style={{fontSize:24,marginBottom:6}}>✅</div><div style={{fontSize:11}}>Sem OTs paradas há mais de 5 dias</div></div></WBox>):(
+              <div>
+                <div style={{fontSize:10,color:"#f59e0b",marginBottom:8,fontWeight:600}}>⚠️ {result.alertas.length} OTs pendentes paradas há mais de 5 dias</div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {result.alertas.map((a,i)=>(
+                    <WBox key={i} style={{padding:10,borderLeft:"3px solid "+(a.dias>15?"#dc2626":a.dias>10?"#f59e0b":"#f97316")}}>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}>
+                        <span style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{a.processo}</span>
+                        <span style={{fontSize:10,fontWeight:700,color:a.dias>15?"#dc2626":"#f59e0b",background:a.dias>15?"#dc262615":"#f59e0b15",padding:"2px 6px",borderRadius:4}}>⏰ {a.dias} dias</span>
+                      </div>
+                      <div style={{fontSize:10,color:"#94a3b8"}}>{a.designacao}</div>
+                      <div style={{display:"flex",gap:8,marginTop:3,fontSize:9,color:"#64748b"}}><span>{a.dp}</span><span>📍 {a.concelho}</span><span>{a.estado}</span></div>
+                    </WBox>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>)}
+
+          {/* Histórico */}
+          {tab==="historico"&&(<div>
+            {(!historico||historico.length===0)?(<WBox><div style={{textAlign:"center",padding:16,color:"#64748b"}}><div style={{fontSize:24,marginBottom:6}}>📅</div><div style={{fontSize:11}}>Sem histórico de análises</div></div></WBox>):(
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {(historico||[]).map((h,i)=>(
+                  <WBox key={i} style={{padding:10}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+                      <span style={{fontSize:11,fontWeight:700,color:"#fff"}}>{fmtD(h.data)}</span>
+                      <span style={{fontSize:9,color:"#64748b"}}>{h.ficheiro}</span>
+                    </div>
+                    <div style={{display:"flex",gap:8,fontSize:10}}>
+                      <span style={{color:"#3b82f6"}}>{h.total} registos</span>
+                      {h.novas>0&&<span style={{color:"#10b981"}}>+{h.novas} novas</span>}
+                      {h.removidas>0&&<span style={{color:"#dc2626"}}>-{h.removidas} removidas</span>}
+                      {h.mudancas>0&&<span style={{color:"#f59e0b"}}>{h.mudancas} alterações</span>}
+                      {h.alertas>0&&<span style={{color:"#f97316"}}>{h.alertas} alertas</span>}
+                    </div>
+                  </WBox>
+                ))}
+              </div>
+            )}
+          </div>)}
+        </div>)}
+      </div>
+    </div>
+  );
+}
+
+/* ── REUNIÕES ── */
+function ReunioesLanding({folders,onBack,onSelect,onAdd,onDelete}) {
+  const [newName,setNewName]=useState("");const [showAdd,setShowAdd]=useState(false);
+  const doAdd=()=>{if(!newName.trim())return;onAdd(newName.trim());setNewName("");setShowAdd(false);};
+  const totalReunioes=(folders||[]).reduce((s,f)=>(s+(f.reunioes||[]).length),0);
+  return (
+    <div style={{minHeight:"100vh",background:"#0f172a"}}>
+      <div style={{background:"linear-gradient(135deg,#312e81,#6366f1)",padding:"14px 24px 18px"}}>
+        <BackBtn onClick={onBack} label="Início"/>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:3}}>
+          <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:20}}>📋</span><h1 style={{fontSize:17,fontWeight:800,color:"#fff",margin:0}}>Reuniões</h1></div>
+          <button onClick={()=>setShowAdd(!showAdd)} style={{padding:"6px 12px",borderRadius:5,border:"none",background:"rgba(255,255,255,.18)",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer"}}>{showAdd?"×":"+ Pasta"}</button>
+        </div>
+        <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:4}}>{(folders||[]).length} pastas · {totalReunioes} reuniões</div>
+      </div>
+      <div style={{padding:"12px 24px 28px"}}>
+        {showAdd&&(<div style={{background:"#1e293b",borderRadius:8,padding:12,marginBottom:12,border:"1px solid #334155",display:"flex",gap:6}}>
+          <input style={{flex:1,padding:"8px 10px",borderRadius:5,border:"1px solid #475569",background:"#0f172a",color:"#e2e8f0",fontSize:12,outline:"none"}} placeholder="Nome da pasta..." value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")doAdd();}} autoFocus/>
+          <button onClick={doAdd} style={{padding:"6px 14px",borderRadius:5,border:"none",background:"#6366f1",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>Criar</button>
+        </div>)}
+        {(folders||[]).length===0?(<div style={{textAlign:"center",padding:"40px 16px",color:"#64748b"}}><div style={{fontSize:32,marginBottom:8}}>📋</div><div style={{fontSize:12}}>Sem pastas de reuniões</div><div style={{fontSize:11,marginTop:4,color:"#475569"}}>Cria uma pasta para organizar as tuas reuniões</div></div>):(
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {folders.map(f=>{const count=(f.reunioes||[]).length;const last=count>0?(f.reunioes||[]).sort((a,b)=>new Date(b.data)-new Date(a.data))[0]:null;
+              return (<div key={f.id} onClick={()=>onSelect(f)} style={{background:"#1e293b",borderRadius:10,padding:"14px 14px",border:"1px solid #334155",cursor:"pointer",display:"flex",alignItems:"center",gap:12,transition:"border-color .15s"}} onMouseEnter={e=>e.currentTarget.style.borderColor="#6366f1"} onMouseLeave={e=>e.currentTarget.style.borderColor="#334155"}>
+                <div style={{width:38,height:38,borderRadius:8,background:"#6366f120",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>📁</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#fff"}}>{f.nome}</div>
+                  <div style={{fontSize:10,color:"#64748b",marginTop:2}}>{count} {count===1?"reunião":"reuniões"}{last?" · última: "+fmtD(last.data):""}</div>
+                </div>
+                <button onClick={(e)=>{e.stopPropagation();if(confirm("Eliminar pasta '"+f.nome+"'?"))onDelete(f.id);}} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:12,opacity:.3,padding:4}}>🗑</button>
+                <span style={{color:"#475569",fontSize:14}}>›</span>
+              </div>);
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReunioesFolder({folder,onBack,onSelect,onAdd,onRename,onDeleteFolder}) {
+  const [showAdd,setShowAdd]=useState(false);const [titulo,setTitulo]=useState("");const [editing,setEditing]=useState(false);const [editName,setEditName]=useState(folder.nome);
+  const doAdd=()=>{if(!titulo.trim())return;const r={id:uid(),titulo:titulo.trim(),data:new Date().toISOString().slice(0,10),participantes:"",notas:"",checklist:[],dataCriacao:new Date().toISOString()};onAdd(r);setTitulo("");setShowAdd(false);};
+  const doRename=()=>{if(editName.trim()){onRename(editName.trim());}setEditing(false);};
+  const reunioes=(folder.reunioes||[]).sort((a,b)=>new Date(b.data)-new Date(a.data));
+  return (
+    <div style={{minHeight:"100vh",background:"#0f172a"}}>
+      <div style={{background:"linear-gradient(135deg,#312e81,#6366f1)",padding:"14px 24px 18px"}}>
+        <BackBtn onClick={onBack} label="Reuniões"/>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:3}}>
+          <div style={{display:"flex",alignItems:"center",gap:7}}>
+            <span style={{fontSize:20}}>📁</span>
+            {editing?(<div style={{display:"flex",gap:4}}><input style={{padding:"4px 8px",borderRadius:4,border:"1px solid rgba(255,255,255,.3)",background:"rgba(255,255,255,.1)",color:"#fff",fontSize:14,fontWeight:700,outline:"none",width:180}} value={editName} onChange={e=>setEditName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")doRename();if(e.key==="Escape")setEditing(false);}} autoFocus/><button onClick={doRename} style={{padding:"3px 8px",borderRadius:4,border:"none",background:"rgba(255,255,255,.2)",color:"#fff",fontSize:10,cursor:"pointer"}}>✓</button></div>):(<h1 onClick={()=>setEditing(true)} style={{fontSize:17,fontWeight:800,color:"#fff",margin:0,cursor:"pointer"}} title="Clica para renomear">{folder.nome}</h1>)}
+          </div>
+          <button onClick={()=>setShowAdd(!showAdd)} style={{padding:"6px 12px",borderRadius:5,border:"none",background:"rgba(255,255,255,.18)",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer"}}>{showAdd?"×":"+ Reunião"}</button>
+        </div>
+        <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:4}}>{reunioes.length} {reunioes.length===1?"reunião":"reuniões"}</div>
+      </div>
+      <div style={{padding:"12px 24px 28px"}}>
+        {showAdd&&(<div style={{background:"#1e293b",borderRadius:8,padding:12,marginBottom:12,border:"1px solid #334155",display:"flex",gap:6}}>
+          <input style={{flex:1,padding:"8px 10px",borderRadius:5,border:"1px solid #475569",background:"#0f172a",color:"#e2e8f0",fontSize:12,outline:"none"}} placeholder="Título da reunião..." value={titulo} onChange={e=>setTitulo(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")doAdd();}} autoFocus/>
+          <button onClick={doAdd} style={{padding:"6px 14px",borderRadius:5,border:"none",background:"#6366f1",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>Criar</button>
+        </div>)}
+        {reunioes.length===0?(<div style={{textAlign:"center",padding:"40px 16px",color:"#64748b"}}><div style={{fontSize:32,marginBottom:8}}>📝</div><div style={{fontSize:12}}>Sem reuniões nesta pasta</div></div>):(
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {reunioes.map(r=>{const checkDone=(r.checklist||[]).filter(c=>c.concluida).length;const checkTotal=(r.checklist||[]).length;
+              return (<div key={r.id} onClick={()=>onSelect(r)} style={{background:"#1e293b",borderRadius:8,padding:"12px 14px",border:"1px solid #334155",cursor:"pointer",display:"flex",alignItems:"center",gap:10,transition:"border-color .15s"}} onMouseEnter={e=>e.currentTarget.style.borderColor="#6366f1"} onMouseLeave={e=>e.currentTarget.style.borderColor="#334155"}>
+                <div style={{width:34,height:34,borderRadius:7,background:"#6366f115",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>📝</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:12,fontWeight:700,color:"#fff"}}>{r.titulo}</div>
+                  <div style={{display:"flex",gap:8,fontSize:10,color:"#64748b",marginTop:2}}>
+                    <span>📅 {fmtD(r.data)}</span>
+                    {r.participantes&&<span>👥 {r.participantes.slice(0,30)}{r.participantes.length>30?"...":""}</span>}
+                    {checkTotal>0&&<span>✅ {checkDone}/{checkTotal}</span>}
+                  </div>
+                  {r.notas&&<div style={{fontSize:10,color:"#475569",marginTop:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.notas.slice(0,60)}{r.notas.length>60?"...":""}</div>}
+                </div>
+                <span style={{color:"#475569",fontSize:14}}>›</span>
+              </div>);
+            })}
+          </div>
+        )}
+        <div style={{marginTop:16,textAlign:"center"}}><button onClick={()=>{if(confirm("Eliminar pasta '"+folder.nome+"' e todas as reuniões?"))onDeleteFolder();}} style={{background:"none",border:"none",color:"#dc2626",fontSize:10,cursor:"pointer",opacity:.5}}>🗑 Eliminar pasta</button></div>
+      </div>
+    </div>
+  );
+}
+
+function ReuniaoDetailPage({reuniao:init,folder,onBack,onSave,onDelete}) {
+  const [r,setR]=useState({...init});const [ed,setEd]=useState(false);const [dirty,setDirty]=useState(false);
+  const [newCheck,setNewCheck]=useState("");
+  const set=(k,v)=>{setR(p=>({...p,[k]:v}));setDirty(true);};
+  const doSave=()=>{onSave(r);setDirty(false);setEd(false);};
+  const addCheck=()=>{if(!newCheck.trim())return;set("checklist",[...(r.checklist||[]),{id:uid(),texto:newCheck.trim(),concluida:false}]);setNewCheck("");};
+  const toggleCheck=(id)=>set("checklist",(r.checklist||[]).map(c=>c.id===id?{...c,concluida:!c.concluida}:c));
+  const removeCheck=(id)=>set("checklist",(r.checklist||[]).filter(c=>c.id!==id));
+  const pending=(r.checklist||[]).filter(c=>!c.concluida);
+  const done=(r.checklist||[]).filter(c=>c.concluida);
+  const fl={width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid "+(ed?"#e2e8f0":"#f1f5f9"),fontSize:12,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:ed?"#fff":"#f8fafc",color:"#334155"};
+  const lb={fontSize:10,fontWeight:600,color:"#64748b",textTransform:"uppercase",letterSpacing:".4px",marginBottom:3,display:"block"};
+  const sc={background:"#fff",borderRadius:9,padding:13,marginBottom:9,border:"1px solid #e2e8f0"};
+  const sh2={fontSize:12,fontWeight:700,color:"#0f172a",marginBottom:9,display:"flex",alignItems:"center",gap:6};
+  return (
+    <div style={{minHeight:"100vh",background:"#f1f5f9"}}>
+      <div style={{background:"linear-gradient(135deg,#312e81,#6366f1)",padding:"11px 24px 15px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <BackBtn onClick={onBack} label={folder.nome}/>
+          <div style={{display:"flex",gap:5}}>
+            {!ed&&<button onClick={()=>setEd(true)} style={{padding:"4px 10px",borderRadius:4,border:"1px solid rgba(255,255,255,.3)",background:"rgba(255,255,255,.1)",color:"#fff",fontSize:10,fontWeight:600,cursor:"pointer"}}>✏️ Editar</button>}
+            {(ed||dirty)&&<button onClick={doSave} style={{padding:"4px 10px",borderRadius:4,border:"none",background:"#f59e0b",color:"#0f172a",fontSize:10,fontWeight:700,cursor:"pointer"}}>💾 Guardar</button>}
+          </div>
+        </div>
+        <div style={{marginTop:5}}>
+          <div style={{fontSize:9,color:"rgba(255,255,255,.4)",fontWeight:600,letterSpacing:1}}>REUNIÃO</div>
+          <h1 style={{fontSize:17,fontWeight:800,color:"#fff",margin:"2px 0 0"}}>{r.titulo||"Nova Reunião"}</h1>
+        </div>
+      </div>
+      <div style={{padding:"11px 24px 32px",maxWidth:600,margin:"0 auto"}}>
+        {/* Identificação */}
+        <div style={sc}>
+          <div style={sh2}>🏷️ Identificação</div>
+          <div style={{marginBottom:7}}><label style={lb}>Título</label><input style={fl} value={r.titulo} onChange={e=>set("titulo",e.target.value)} readOnly={!ed}/></div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
+            <div><label style={lb}>Data</label><input type="date" style={fl} value={r.data} onChange={e=>set("data",e.target.value)} readOnly={!ed}/></div>
+            <div><label style={lb}>Participantes</label><input style={fl} value={r.participantes} onChange={e=>set("participantes",e.target.value)} readOnly={!ed} placeholder="Miguel, João..."/></div>
+          </div>
+        </div>
+
+        {/* Notas */}
+        <div style={sc}>
+          <div style={sh2}>📝 Notas / Decisões</div>
+          <textarea style={{...fl,resize:"vertical",minHeight:120,border:"1px solid "+(ed?"#e2e8f0":"#f1f5f9"),background:ed?"#fff":"#f8fafc"}} value={r.notas||""} onChange={e=>set("notas",e.target.value)} readOnly={!ed} placeholder={ed?"Escreve as notas da reunião...":"Sem notas"}/>
+        </div>
+
+        {/* Checklist */}
+        <div style={sc}>
+          <div style={sh2}>✅ Checklist ({pending.length} pendentes)</div>
+          {ed&&(<div style={{display:"flex",gap:4,marginBottom:7}}>
+            <input style={{...fl,flex:1,border:"1px solid #e2e8f0",background:"#fff"}} placeholder="Nova ação..." value={newCheck} onChange={e=>setNewCheck(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")addCheck();}}/>
+            <button onClick={addCheck} style={{padding:"0 9px",borderRadius:5,border:"none",background:"#6366f1",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>+</button>
+          </div>)}
+          {pending.map(c=>(<div key={c.id} style={{display:"flex",alignItems:"center",gap:2,borderBottom:"1px solid #f8fafc"}}>
+            <div style={{flex:1}}><Toggle checked={false} onChange={()=>{toggleCheck(c.id);}} label={c.texto} strikethrough/></div>
+            {ed&&<button onClick={()=>removeCheck(c.id)} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:10,opacity:.3}}>✕</button>}
+          </div>))}
+          {done.length>0&&(<div><div style={{fontSize:9,color:"#94a3b8",fontWeight:600,marginTop:8,marginBottom:2}}>FEITAS ({done.length})</div>
+            {done.map(c=>(<div key={c.id} style={{display:"flex",alignItems:"center",gap:2,opacity:.5,borderBottom:"1px solid #fafbfc"}}>
+              <div style={{flex:1}}><Toggle checked={true} onChange={()=>{toggleCheck(c.id);}} label={c.texto} strikethrough/></div>
+              {ed&&<button onClick={()=>removeCheck(c.id)} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:10,opacity:.3}}>✕</button>}
+            </div>))}
+          </div>)}
+          {pending.length===0&&done.length===0&&<div style={{color:"#94a3b8",fontSize:10,textAlign:"center",padding:4}}>Sem itens</div>}
+        </div>
+
+        {/* Actions */}
+        <div style={{display:"flex",justifyContent:"center",gap:16,paddingTop:3}}>
+          <button onClick={()=>{if(confirm("Eliminar esta reunião?"))onDelete(r.id);}} style={{background:"none",border:"none",color:"#dc2626",fontSize:10,cursor:"pointer"}}>🗑 Eliminar</button>
+        </div>
+
+        {(ed||dirty)&&(<div style={{position:"fixed",bottom:10,right:10,background:"#0f172a",padding:"6px 12px",borderRadius:7,boxShadow:"0 4px 20px rgba(0,0,0,.3)",display:"flex",alignItems:"center",gap:6,zIndex:100}}><span style={{color:"#94a3b8",fontSize:10}}>Por guardar</span><button onClick={doSave} style={{padding:"5px 10px",borderRadius:4,border:"none",background:"#f59e0b",color:"#0f172a",fontWeight:700,fontSize:10,cursor:"pointer"}}>💾 Guardar</button></div>)}
+      </div>
+    </div>
+  );
+}
+
 /* ── APP ── */
 function App() {
-  const [obras,setObras]=useState([]);const [events,setEvents]=useState([]);const [todos,setTodos]=useState([]);const [contacts,setContacts]=useState([]);
+  const [obras,setObras]=useState([]);const [events,setEvents]=useState([]);const [todos,setTodos]=useState([]);const [contacts,setContacts]=useState([]);const [reunioes,setReunioes]=useState([]);const [excelEstado,setExcelEstado]=useState(null);const [excelHistorico,setExcelHistorico]=useState([]);
   const [loaded,setLoaded]=useState(false);const [page,setPage]=useState("home");const [cT,setCT]=useState(null);const [cO,setCO]=useState(null);const [isN,setIsN]=useState(false);
+  const [cFolder,setCFolder]=useState(null);const [cReuniao,setCReuniao]=useState(null);
   const notif=useNotifications(obras,events);
 
   useEffect(()=>{
-    let count=0;const done=()=>{count++;if(count>=4){setLoaded(true);}};
+    let count=0;const done=()=>{count++;if(count>=7){setLoaded(true);}};
     window.dataStore.load("obras",(d)=>{setObras(d);done();});
     window.dataStore.load("events",(d)=>{setEvents(d);done();});
     window.dataStore.load("todos",(d)=>{setTodos(d);done();});
     window.dataStore.load("contacts",(d)=>{setContacts(d);done();});
+    window.dataStore.load("reunioes",(d)=>{setReunioes(d);done();});
+    window.dataStore.load("excelEstado",(d)=>{setExcelEstado(d&&d.length?d:null);done();});
+    window.dataStore.load("excelHistorico",(d)=>{setExcelHistorico(d);done();});
     const u1=window.dataStore.listen("obras",(d)=>setObras(d));
     const u2=window.dataStore.listen("events",(d)=>setEvents(d));
     const u3=window.dataStore.listen("todos",(d)=>setTodos(d));
     const u4=window.dataStore.listen("contacts",(d)=>setContacts(d));
-    return ()=>{u1();u2();u3();u4();};
+    const u5=window.dataStore.listen("reunioes",(d)=>setReunioes(d));
+    const u6=window.dataStore.listen("excelEstado",(d)=>setExcelEstado(d&&d.length?d:null));
+    const u7=window.dataStore.listen("excelHistorico",(d)=>setExcelHistorico(d));
+    return ()=>{u1();u2();u3();u4();u5();u6();u7();};
   },[]);
 
   const pO=useCallback((n)=>{setObras(n);window.dataStore.save("obras",n);},[]);
   const pE=useCallback((n)=>{setEvents(n);window.dataStore.save("events",n);},[]);
   const pT=useCallback((n)=>{setTodos(n);window.dataStore.save("todos",n);},[]);
   const pC=useCallback((n)=>{setContacts(n);window.dataStore.save("contacts",n);},[]);
+  const pR=useCallback((n)=>{setReunioes(n);window.dataStore.save("reunioes",n);},[]);
+  const pXE=useCallback((n)=>{setExcelEstado(n);window.dataStore.save("excelEstado",n);},[]);
+  const pXH=useCallback((n)=>{setExcelHistorico(n);window.dataStore.save("excelHistorico",n);},[]);
 
-  const nH=()=>{setPage("home");setCT(null);setCO(null);};
+  const nH=()=>{setPage("home");setCT(null);setCO(null);setCFolder(null);setCReuniao(null);};
   const nCat=(t)=>{setPage("cat");setCT(t);setCO(null);};
   const nOb=(o)=>{setPage("obra");setCO(o);setIsN(false);};
   const nNew=(t)=>{setCO({...EMPTY_OBRA,id:uid(),dataCriacao:new Date().toISOString(),tipo:t||"PLR"});setIsN(true);setPage("obra");};
   const nOA=(o)=>{setCT(o.tipo);setCO(o);setIsN(false);setPage("obra");};
+  const nReun=()=>{setPage("reunioes");setCFolder(null);setCReuniao(null);};
+  const nAnalise=()=>{setPage("analise");};
+  const nExcel=()=>{setPage("excel");};
+  const nFolder=(f)=>{setPage("reunioes-folder");setCFolder(f);setCReuniao(null);};
+  const nReunDetail=(r)=>{setPage("reuniao-detail");setCReuniao(r);};
 
   const doSv=(obra)=>{const ex=obras.find(o=>o.id===obra.id);pO(ex?obras.map(o=>o.id===obra.id?obra:o):[...obras,obra]);setCO(obra);setIsN(false);};
   const doDl=(id)=>{pO(obras.filter(o=>o.id!==id));cT?nCat(cT):nH();};
 
+  // Reunioes handlers
+  const addFolder=(nome)=>{pR([...reunioes,{id:uid(),nome,icon:"📁",reunioes:[],dataCriacao:new Date().toISOString()}]);};
+  const removeFolder=(id)=>{pR(reunioes.filter(f=>f.id!==id));};
+  const renameFolder=(id,nome)=>{pR(reunioes.map(f=>f.id===id?{...f,nome}:f));};
+  const addReuniao=(folderId,reuniao)=>{pR(reunioes.map(f=>f.id===folderId?{...f,reunioes:[...f.reunioes,reuniao]}:f));};
+  const updateReuniao=(folderId,reuniao)=>{pR(reunioes.map(f=>f.id===folderId?{...f,reunioes:f.reunioes.map(r=>r.id===reuniao.id?reuniao:r)}:f));};
+  const removeReuniao=(folderId,reuniaoId)=>{pR(reunioes.map(f=>f.id===folderId?{...f,reunioes:f.reunioes.filter(r=>r.id!==reuniaoId)}:f));};
+
   if (!loaded) return (<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100vh",background:"#0f172a",color:"#64748b",gap:12}}><div style={{fontSize:24,fontWeight:800,color:"#fff"}}>Gestor<span style={{color:"#f59e0b"}}>Obras</span></div><div style={{fontSize:12}}>A sincronizar...</div></div>);
 
+  if (page==="analise") return (<AnalisePage onBack={nH}/>);
+  if (page==="excel") return (<ExcelAnalise onBack={nH} estado={excelEstado} historico={excelHistorico} onUpdateEstado={pXE} onUpdateHistorico={pXH}/>);
+  if (page==="reuniao-detail"&&cReuniao&&cFolder) return (<ReuniaoDetailPage reuniao={cReuniao} folder={cFolder} onBack={()=>nFolder(cFolder)} onSave={(r)=>{updateReuniao(cFolder.id,r);setCReuniao(r);}} onDelete={(rid)=>{removeReuniao(cFolder.id,rid);nFolder(cFolder);}}/>);
+  if (page==="reunioes-folder"&&cFolder) {const fresh=reunioes.find(f=>f.id===cFolder.id)||cFolder; return (<ReunioesFolder folder={fresh} onBack={nReun} onSelect={nReunDetail} onAdd={(r)=>addReuniao(fresh.id,r)} onRename={(nome)=>renameFolder(fresh.id,nome)} onDeleteFolder={()=>{removeFolder(fresh.id);nReun();}}/>);}
+  if (page==="reunioes") return (<ReunioesLanding folders={reunioes} onBack={nH} onSelect={nFolder} onAdd={addFolder} onDelete={removeFolder}/>);
   if (page==="obra"&&cO) return (<ObraPage obra={cO} isNew={isN} onBack={()=>cT?nCat(cT):nH()} onSave={doSv} onDelete={doDl}/>);
   if (page==="cat"&&cT) return (<Category tipo={cT} obras={obras} onBack={nH} onSelect={nOb} onNew={()=>nNew(cT)}/>);
-  return (<Landing obras={obras} onType={nCat} onNew={()=>nNew()} onSelObra={nOA} events={events} onAddEv={e=>pE([...events,e])} onRemEv={id=>pE(events.filter(e=>e.id!==id))} todos={todos} onAddTd={t=>pT([...todos,t])} onTogTd={id=>pT(todos.map(t=>t.id===id?{...t,concluida:!t.concluida}:t))} onRemTd={id=>pT(todos.filter(t=>t.id!==id))} contacts={contacts} onAddCt={c=>pC([...contacts,c])} onRemCt={id=>pC(contacts.filter(c=>c.id!==id))} notif={notif}/>);
+  return (<Landing obras={obras} onType={nCat} onNew={()=>nNew()} onSelObra={nOA} onReunioes={nReun} onAnalise={nAnalise} onExcel={nExcel} reunioes={reunioes} excelEstado={excelEstado} events={events} onAddEv={e=>pE([...events,e])} onRemEv={id=>pE(events.filter(e=>e.id!==id))} todos={todos} onAddTd={t=>pT([...todos,t])} onTogTd={id=>pT(todos.map(t=>t.id===id?{...t,concluida:!t.concluida}:t))} onRemTd={id=>pT(todos.filter(t=>t.id!==id))} contacts={contacts} onAddCt={c=>pC([...contacts,c])} onRemCt={id=>pC(contacts.filter(c=>c.id!==id))} notif={notif}/>);
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
