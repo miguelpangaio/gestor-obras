@@ -566,7 +566,7 @@ function ContactsW({contacts,onAdd,onRemove}) {
 }
 
 /* ── LANDING ── */
-function Landing({obras,onType,onNew,onSelObra,onReunioes,onAnalise,onExcel,reunioes,excelEstado,events,onAddEv,onRemEv,todos,onAddTd,onTogTd,onRemTd,contacts,onAddCt,onRemCt,notif}) {
+function Landing({obras,onType,onNew,onSelObra,onReunioes,onExcel,reunioes,excelEstado,events,onAddEv,onRemEv,todos,onAddTd,onTogTd,onRemTd,contacts,onAddCt,onRemCt,notif}) {
   const a=obras.filter(o=>!o.arquivada);const active=a.filter(o=>!o.concluida);const done=a.filter(o=>o.concluida);
   const alerts=useMemo(()=>getAlerts(obras),[obras]);const activity=useMemo(()=>getActivity(obras),[obras]);
   const totalTarefas=active.reduce((s,o)=>s+(o.tarefas||[]).filter(t=>!t.concluida).length,0);
@@ -607,15 +607,6 @@ function Landing({obras,onType,onNew,onSelObra,onReunioes,onAnalise,onExcel,reun
           })}
         </div>
 
-        {/* Análise Diária */}
-        <div onClick={onAnalise} style={{background:"linear-gradient(135deg,#0c4a6e,#0ea5e9)",borderRadius:11,padding:"16px 14px",cursor:"pointer",marginBottom:10,transition:"transform .15s",display:"flex",alignItems:"center",gap:12}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-2px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"}>
-          <span style={{fontSize:24}}>📊</span>
-          <div style={{flex:1}}>
-            <div style={{fontSize:15,fontWeight:700,color:"#fff"}}>Análise Diária</div>
-            <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:1}}>Carrega o Excel e vê o que mudou</div>
-          </div>
-          <span style={{color:"rgba(255,255,255,.4)",fontSize:16}}>›</span>
-        </div>
 
         {/* Reuniões */}
         <div onClick={onReunioes} style={{background:"linear-gradient(135deg,#312e81,#6366f1)",borderRadius:11,padding:"16px 14px",cursor:"pointer",marginBottom:12,transition:"transform .15s",display:"flex",alignItems:"center",gap:12}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-2px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"}>
@@ -1128,7 +1119,16 @@ function analyzeData(rows,prevRows) {
 
 function ExcelAnalise({onBack,estado,historico,onUpdateEstado,onUpdateHistorico}) {
   const [loading,setLoading]=useState(false);const [result,setResult]=useState(null);const [tab,setTab]=useState("resumo");
+  const [search,setSearch]=useState("");const [searchResults,setSearchResults]=useState([]);
   const fileRef=useRef(null);
+
+  // Ao abrir, se já há dados guardados, mostrar a última análise
+  useEffect(()=>{
+    if(estado&&estado.rows&&estado.rows.length>0&&!result){
+      const analysis=analyzeData(estado.rows,null);
+      setResult(analysis);
+    }
+  },[estado]);
 
   const handleFile=async(e)=>{
     const file=e.target.files[0];if(!file)return;
@@ -1138,6 +1138,7 @@ function ExcelAnalise({onBack,estado,historico,onUpdateEstado,onUpdateHistorico}
       const prevRows=(estado&&estado.rows)?estado.rows:null;
       const analysis=analyzeData(rows,prevRows);
       setResult(analysis);
+      setTab("resumo");
 
       // Guardar changelog no histórico
       const entry={data:new Date().toISOString(),ficheiro:file.name,total:rows.length,novas:analysis.novas.length,removidas:analysis.removidas.length,mudancas:analysis.mudancas.length,alertas:analysis.alertas.length};
@@ -1147,6 +1148,16 @@ function ExcelAnalise({onBack,estado,historico,onUpdateEstado,onUpdateHistorico}
       onUpdateEstado({rows:rows,dataUpload:new Date().toISOString(),ficheiro:file.name});
     } catch(err){alert("Erro ao ler ficheiro: "+err.message);}
     setLoading(false);
+  };
+
+  const doSearch=(q)=>{
+    setSearch(q);
+    if(!q.trim()||!estado||!estado.rows){setSearchResults([]);return;}
+    const s=q.trim().toLowerCase();
+    const found=estado.rows.filter(r=>{
+      return [r["Nº de Processo de Origem"],r["Definição do Projeto"],r["Subordem"],r["Designação Subordem"],r["Concelho"],r["PSE"],r["Estado Progest"],r["Estado Ordem de Trabalho"],r["Nome Item"]].some(v=>(v||"").toString().toLowerCase().includes(s));
+    });
+    setSearchResults(found);
   };
 
   const tabBtn=(k,label,icon,count)=>{
@@ -1162,22 +1173,31 @@ function ExcelAnalise({onBack,estado,historico,onUpdateEstado,onUpdateHistorico}
           <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:20}}>📊</span><h1 style={{fontSize:17,fontWeight:800,color:"#fff",margin:0}}>Análise Excel</h1></div>
           <button onClick={()=>fileRef.current&&fileRef.current.click()} disabled={loading} style={{padding:"6px 12px",borderRadius:5,border:"none",background:"rgba(255,255,255,.18)",color:"#fff",fontWeight:700,fontSize:11,cursor:loading?"wait":"pointer"}}>{loading?"A analisar...":"📂 Carregar Excel"}</button>
         </div>
-        {estado&&<div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:4}}>Último: {estado.ficheiro} ({fmtD(estado.dataUpload)})</div>}
+        {estado&&<div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:4}}>Último upload: {estado.ficheiro} ({fmtD(estado.dataUpload)}) · Carrega novo Excel para ver alterações</div>}
         <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={handleFile} style={{display:"none"}}/>
       </div>
 
       <div style={{padding:"12px 20px 28px"}}>
-        {!result&&!estado&&(<div style={{textAlign:"center",padding:"50px 16px",color:"#64748b"}}><div style={{fontSize:48,marginBottom:12}}>📊</div><div style={{fontSize:14,fontWeight:600,color:"#94a3b8"}}>Carrega o teu Excel diário</div><div style={{fontSize:11,marginTop:6,color:"#475569",maxWidth:280,margin:"6px auto 0"}}>Arrasta o ficheiro CP_ListaExecução ou clica no botão acima. A análise compara com o dia anterior automaticamente.</div>
+        {!result&&!estado&&(<div style={{textAlign:"center",padding:"50px 16px",color:"#64748b"}}><div style={{fontSize:48,marginBottom:12}}>📊</div><div style={{fontSize:14,fontWeight:600,color:"#94a3b8"}}>Carrega o teu Excel diário</div><div style={{fontSize:11,marginTop:6,color:"#475569",maxWidth:280,margin:"6px auto 0"}}>Seleciona o ficheiro CP_ListaExecução. A análise compara automaticamente com o dia anterior.</div>
           <button onClick={()=>fileRef.current&&fileRef.current.click()} style={{marginTop:16,padding:"10px 24px",borderRadius:8,border:"2px solid #10b981",background:"transparent",color:"#10b981",fontSize:12,fontWeight:700,cursor:"pointer"}}>📂 Selecionar ficheiro</button>
         </div>)}
 
         {result&&(<div>
+          {/* Search */}
+          <div style={{marginBottom:10}}>
+            <div style={{display:"flex",gap:6}}>
+              <input style={{flex:1,padding:"8px 10px",borderRadius:6,border:"1px solid #334155",background:"#1e293b",color:"#e2e8f0",fontSize:12,outline:"none"}} placeholder="🔍 Pesquisar PLR, RP, OT, DP, concelho..." value={search} onChange={e=>{doSearch(e.target.value);if(e.target.value.trim())setTab("pesquisa");}}/>
+              {search&&<button onClick={()=>{setSearch("");setSearchResults([]);setTab("resumo");}} style={{padding:"6px 10px",borderRadius:6,border:"1px solid #334155",background:"#1e293b",color:"#94a3b8",fontSize:11,cursor:"pointer"}}>✕</button>}
+            </div>
+          </div>
+
           {/* Tabs */}
           <div style={{display:"flex",gap:4,marginBottom:12,flexWrap:"wrap"}}>
             {tabBtn("resumo","Resumo","📋")}
             {tabBtn("mudancas","Alterações","🔄",result.mudancas.length)}
             {tabBtn("novas","Novas","🆕",result.novas.length)}
             {tabBtn("alertas","Alertas","⚠️",result.alertas.length)}
+            {tabBtn("pesquisa","Pesquisa","🔍",search?searchResults.length:undefined)}
             {tabBtn("historico","Histórico","📅")}
           </div>
 
@@ -1291,6 +1311,56 @@ function ExcelAnalise({onBack,estado,historico,onUpdateEstado,onUpdateHistorico}
                       <div style={{display:"flex",gap:8,marginTop:3,fontSize:9,color:"#64748b"}}><span>{a.dp}</span><span>📍 {a.concelho}</span><span>{a.estado}</span></div>
                     </WBox>
                   ))}
+                </div>
+              </div>
+            )}
+          </div>)}
+
+          {/* Pesquisa */}
+          {tab==="pesquisa"&&(<div>
+            {!search.trim()?(<WBox><div style={{textAlign:"center",padding:16,color:"#64748b"}}><div style={{fontSize:24,marginBottom:6}}>🔍</div><div style={{fontSize:11}}>Escreve um número de PLR, RP, OT ou DP para pesquisar</div></div></WBox>):
+            searchResults.length===0?(<WBox><div style={{textAlign:"center",padding:16,color:"#64748b"}}><div style={{fontSize:24,marginBottom:6}}>🔍</div><div style={{fontSize:11}}>Sem resultados para "{search}"</div></div></WBox>):(
+              <div>
+                <div style={{fontSize:10,color:"#10b981",fontWeight:600,marginBottom:8}}>{searchResults.length} resultado{searchResults.length!==1?"s":""} para "{search}"</div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {searchResults.map((r,i)=>{
+                    const processo=r["Nº de Processo de Origem"]||"";
+                    const isPLR=processo.toString().startsWith("9")||processo.toString().startsWith("8");
+                    const accentColor=isPLR?"#16a34a":"#3b82f6";
+                    const ultimaAtt=r["Última Atualização Ordem"];
+                    const diasAtt=ultimaAtt?Math.floor((new Date()-new Date(ultimaAtt))/86400000):null;
+                    return (
+                      <WBox key={i} style={{padding:12,borderLeft:"3px solid "+accentColor}}>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <span style={{fontSize:12}}>{isPLR?"⚡":"🏗️"}</span>
+                            <span style={{fontSize:12,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{processo}</span>
+                            <span style={{fontSize:9,background:accentColor+"20",color:accentColor,padding:"1px 5px",borderRadius:3,fontWeight:600}}>{isPLR?"PLR":"RP"}</span>
+                          </div>
+                          {diasAtt!==null&&<span style={{fontSize:9,color:diasAtt>10?"#f59e0b":"#64748b"}}>att: {diasAtt}d</span>}
+                        </div>
+                        <div style={{fontSize:11,color:"#e2e8f0",marginBottom:4}}>{r["Designação Subordem"]||""}</div>
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,fontSize:10}}>
+                          <div><span style={{color:"#64748b"}}>DP: </span><span style={{color:"#f59e0b",fontFamily:"monospace"}}>{r["Definição do Projeto"]||"—"}</span></div>
+                          <div><span style={{color:"#64748b"}}>OT: </span><span style={{color:"#94a3b8",fontFamily:"monospace"}}>{r["Subordem"]||"—"}</span></div>
+                          <div><span style={{color:"#64748b"}}>Estado: </span><span style={{color:"#e2e8f0"}}>{r["Estado Progest"]||"—"}</span></div>
+                          <div><span style={{color:"#64748b"}}>OT Estado: </span><span style={{color:r["Estado Ordem de Trabalho"]==="Pendente"?"#f59e0b":r["Estado Ordem de Trabalho"]==="Suspensa"?"#dc2626":"#10b981"}}>{r["Estado Ordem de Trabalho"]||"—"}</span></div>
+                          <div><span style={{color:"#64748b"}}>📍 </span><span style={{color:"#94a3b8"}}>{r["Concelho"]||"—"}</span></div>
+                          <div><span style={{color:"#64748b"}}>PSE: </span><span style={{color:"#94a3b8"}}>{r["PSE"]||"—"}</span></div>
+                          <div><span style={{color:"#64748b"}}>Adjudicação: </span><span style={{color:"#94a3b8"}}>{r["Adjudicação"]||"—"}</span></div>
+                          <div><span style={{color:"#64748b"}}>Data Fim: </span><span style={{color:"#94a3b8"}}>{r["Data Base Fim"]?fmtD(r["Data Base Fim"]):"—"}</span></div>
+                        </div>
+                        {(r["Planeado MO €"]||r["Realizado MO €"])&&(
+                          <div style={{display:"flex",gap:8,marginTop:6,fontSize:9,color:"#64748b",borderTop:"1px solid #334155",paddingTop:4}}>
+                            <span>MO Plan: {r["Planeado MO €"]||0}€</span>
+                            <span>MO Real: {r["Realizado MO €"]||0}€</span>
+                            <span>Mat Plan: {r["Planeado Mat. €"]||0}€</span>
+                            <span>Mat Real: {r["Realizado Mat. €"]||0}€</span>
+                          </div>
+                        )}
+                      </WBox>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1547,14 +1617,13 @@ function App() {
 
   if (!loaded) return (<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100vh",background:"#0f172a",color:"#64748b",gap:12}}><div style={{fontSize:24,fontWeight:800,color:"#fff"}}>Gestor<span style={{color:"#f59e0b"}}>Obras</span></div><div style={{fontSize:12}}>A sincronizar...</div></div>);
 
-  if (page==="analise") return (<AnalisePage onBack={nH}/>);
   if (page==="excel") return (<ExcelAnalise onBack={nH} estado={excelEstado} historico={excelHistorico} onUpdateEstado={pXE} onUpdateHistorico={pXH}/>);
   if (page==="reuniao-detail"&&cReuniao&&cFolder) return (<ReuniaoDetailPage reuniao={cReuniao} folder={cFolder} onBack={()=>nFolder(cFolder)} onSave={(r)=>{updateReuniao(cFolder.id,r);setCReuniao(r);}} onDelete={(rid)=>{removeReuniao(cFolder.id,rid);nFolder(cFolder);}}/>);
   if (page==="reunioes-folder"&&cFolder) {const fresh=reunioes.find(f=>f.id===cFolder.id)||cFolder; return (<ReunioesFolder folder={fresh} onBack={nReun} onSelect={nReunDetail} onAdd={(r)=>addReuniao(fresh.id,r)} onRename={(nome)=>renameFolder(fresh.id,nome)} onDeleteFolder={()=>{removeFolder(fresh.id);nReun();}}/>);}
   if (page==="reunioes") return (<ReunioesLanding folders={reunioes} onBack={nH} onSelect={nFolder} onAdd={addFolder} onDelete={removeFolder}/>);
   if (page==="obra"&&cO) return (<ObraPage obra={cO} isNew={isN} onBack={()=>cT?nCat(cT):nH()} onSave={doSv} onDelete={doDl}/>);
   if (page==="cat"&&cT) return (<Category tipo={cT} obras={obras} onBack={nH} onSelect={nOb} onNew={()=>nNew(cT)}/>);
-  return (<Landing obras={obras} onType={nCat} onNew={()=>nNew()} onSelObra={nOA} onReunioes={nReun} onAnalise={nAnalise} onExcel={nExcel} reunioes={reunioes} excelEstado={excelEstado} events={events} onAddEv={e=>pE([...events,e])} onRemEv={id=>pE(events.filter(e=>e.id!==id))} todos={todos} onAddTd={t=>pT([...todos,t])} onTogTd={id=>pT(todos.map(t=>t.id===id?{...t,concluida:!t.concluida}:t))} onRemTd={id=>pT(todos.filter(t=>t.id!==id))} contacts={contacts} onAddCt={c=>pC([...contacts,c])} onRemCt={id=>pC(contacts.filter(c=>c.id!==id))} notif={notif}/>);
+  return (<Landing obras={obras} onType={nCat} onNew={()=>nNew()} onSelObra={nOA} onReunioes={nReun} onExcel={nExcel} reunioes={reunioes} excelEstado={excelEstado} events={events} onAddEv={e=>pE([...events,e])} onRemEv={id=>pE(events.filter(e=>e.id!==id))} todos={todos} onAddTd={t=>pT([...todos,t])} onTogTd={id=>pT(todos.map(t=>t.id===id?{...t,concluida:!t.concluida}:t))} onRemTd={id=>pT(todos.filter(t=>t.id!==id))} contacts={contacts} onAddCt={c=>pC([...contacts,c])} onRemCt={id=>pC(contacts.filter(c=>c.id!==id))} notif={notif}/>);
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
