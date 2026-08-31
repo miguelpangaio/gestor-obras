@@ -1089,7 +1089,7 @@ function slimRow(r){
 function excelSave(key,data){try{localStorage.setItem("excel_"+key,JSON.stringify(data));}catch(e){console.warn("Excel save failed",e);}}
 function excelLoad(key){try{const d=localStorage.getItem("excel_"+key);return d?JSON.parse(d):null;}catch(e){return null;}}
 
-function ExcelAnalise({onBack,historico,onUpdateHistorico,onUpdateMeta}){
+function ExcelAnalise({onBack,historico,onUpdateHistorico,syncRows,syncMeta,onSaveRows,onSaveMeta}){
   const [loading,setLoading]=useState(false);
   const [result,setResult]=useState(null);
   const [tab,setTab]=useState("resumo");
@@ -1100,14 +1100,15 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,onUpdateMeta}){
   const fileRef=useRef(null);
 
   useEffect(()=>{
-    const saved=excelLoad("rows");
-    const savedMeta=excelLoad("meta");
-    if(saved&&saved.length>0){
-      setRows(saved);
+    // Usar dados do Firebase (sincronizados) ou localStorage (fallback)
+    const savedRows=syncRows||(excelLoad("rows"));
+    const savedMeta=syncMeta||(excelLoad("meta"));
+    if(savedRows&&savedRows.length>0){
+      setRows(savedRows);
       setMeta(savedMeta);
-      setResult(doAnalyze(saved,null));
+      setResult(doAnalyze(savedRows,null));
     }
-  },[]);
+  },[syncRows,syncMeta]);
 
   const doAnalyze=(data,prev)=>{
     const r={totais:{},estados:{},estadosOT:{},estadosEOT:{},concelhos:{},novas:[],removidas:[],mudancas:[],alertas:[]};
@@ -1161,11 +1162,13 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,onUpdateMeta}){
       const slim=raw.map(slimRow);
       const prev=rows;
       const analysis=doAnalyze(slim,prev);
-      excelSave("rows",slim);
       const newMeta={d:new Date().toISOString(),f:file.name,total:slim.length};
+      // Guardar localStorage (rápido) + Firebase (sincroniza)
+      excelSave("rows",slim);
       excelSave("meta",newMeta);
+      onSaveRows(slim);
+      onSaveMeta(newMeta);
       setRows(slim);setMeta(newMeta);setResult(analysis);setTab("resumo");
-      onUpdateMeta(newMeta);
       const entry={data:new Date().toISOString(),ficheiro:file.name,total:slim.length,novas:analysis.novas.length,removidas:analysis.removidas.length,mudancas:analysis.mudancas.length,alertas:analysis.alertas.length};
       onUpdateHistorico([entry,...(historico||[]).slice(0,29)]);
     }catch(err){alert("Erro: "+err.message);}
@@ -1555,27 +1558,30 @@ function ReuniaoDetailPage({reuniao:init,folder,onBack,onSave,onDelete}) {
 
 /* ── APP ── */
 function App() {
-  const [obras,setObras]=useState([]);const [events,setEvents]=useState([]);const [todos,setTodos]=useState([]);const [contacts,setContacts]=useState([]);const [reunioes,setReunioes]=useState([]);const [excelHistorico,setExcelHistorico]=useState([]);const [excelMeta,setExcelMeta]=useState(null);
+  const [obras,setObras]=useState([]);const [events,setEvents]=useState([]);const [todos,setTodos]=useState([]);const [contacts,setContacts]=useState([]);const [reunioes,setReunioes]=useState([]);const [excelHistorico,setExcelHistorico]=useState([]);const [excelMeta,setExcelMeta]=useState(null);const [excelRows,setExcelRows]=useState(null);
   const [loaded,setLoaded]=useState(false);const [page,setPage]=useState("home");const [cT,setCT]=useState(null);const [cO,setCO]=useState(null);const [isN,setIsN]=useState(false);
   const [cFolder,setCFolder]=useState(null);const [cReuniao,setCReuniao]=useState(null);
   const notif=useNotifications(obras,events);
 
   useEffect(()=>{
-    let count=0;const done=()=>{count++;if(count>=6){setLoaded(true);}};
+    let count=0;const done=()=>{count++;if(count>=8){setLoaded(true);}};
     window.dataStore.load("obras",(d)=>{setObras(d);done();});
     window.dataStore.load("events",(d)=>{setEvents(d);done();});
     window.dataStore.load("todos",(d)=>{setTodos(d);done();});
     window.dataStore.load("contacts",(d)=>{setContacts(d);done();});
     window.dataStore.load("reunioes",(d)=>{setReunioes(d);done();});
     window.dataStore.load("excelHistorico",(d)=>{setExcelHistorico(d);done();});
-    try{const em=localStorage.getItem("excel_meta");if(em)setExcelMeta(JSON.parse(em));}catch(e){}
+    window.dataStore.load("excelMeta",(d)=>{if(d&&d.d)setExcelMeta(d);done();});
+    window.dataStore.load("excelRows",(d)=>{if(d&&d.length)setExcelRows(d);done();});
     const u1=window.dataStore.listen("obras",(d)=>setObras(d));
     const u2=window.dataStore.listen("events",(d)=>setEvents(d));
     const u3=window.dataStore.listen("todos",(d)=>setTodos(d));
     const u4=window.dataStore.listen("contacts",(d)=>setContacts(d));
     const u5=window.dataStore.listen("reunioes",(d)=>setReunioes(d));
     const u7=window.dataStore.listen("excelHistorico",(d)=>setExcelHistorico(d));
-    return ()=>{u1();u2();u3();u4();u5();u7();};
+    const u8=window.dataStore.listen("excelMeta",(d)=>{if(d&&d.d)setExcelMeta(d);});
+    const u9=window.dataStore.listen("excelRows",(d)=>{if(d&&d.length)setExcelRows(d);});
+    return ()=>{u1();u2();u3();u4();u5();u7();u8();u9();};
   },[]);
 
   const pO=useCallback((n)=>{setObras(n);window.dataStore.save("obras",n);},[]);
@@ -1584,6 +1590,8 @@ function App() {
   const pC=useCallback((n)=>{setContacts(n);window.dataStore.save("contacts",n);},[]);
   const pR=useCallback((n)=>{setReunioes(n);window.dataStore.save("reunioes",n);},[]);
   const pXH=useCallback((n)=>{setExcelHistorico(n);window.dataStore.save("excelHistorico",n);},[]);
+  const pXM=useCallback((n)=>{setExcelMeta(n);window.dataStore.save("excelMeta",n);},[]);
+  const pXR=useCallback((n)=>{setExcelRows(n);window.dataStore.save("excelRows",n);excelSave("rows",n);},[]);
 
   const nH=()=>{setPage("home");setCT(null);setCO(null);setCFolder(null);setCReuniao(null);};
   const nCat=(t)=>{setPage("cat");setCT(t);setCO(null);};
@@ -1609,7 +1617,7 @@ function App() {
 
   if (!loaded) return (<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100vh",background:"#0f172a",color:"#64748b",gap:12}}><div style={{fontSize:24,fontWeight:800,color:"#fff"}}>Gestor<span style={{color:"#f59e0b"}}>Obras</span></div><div style={{fontSize:12}}>A sincronizar...</div></div>);
 
-  if (page==="excel") return (<ExcelAnalise onBack={nH} historico={excelHistorico} onUpdateHistorico={pXH} onUpdateMeta={(m)=>setExcelMeta(m)}/>);
+  if (page==="excel") return (<ExcelAnalise onBack={nH} historico={excelHistorico} onUpdateHistorico={pXH} syncRows={excelRows} syncMeta={excelMeta} onSaveRows={pXR} onSaveMeta={pXM}/>);
   if (page==="reuniao-detail"&&cReuniao&&cFolder) return (<ReuniaoDetailPage reuniao={cReuniao} folder={cFolder} onBack={()=>nFolder(cFolder)} onSave={(r)=>{updateReuniao(cFolder.id,r);setCReuniao(r);}} onDelete={(rid)=>{removeReuniao(cFolder.id,rid);nFolder(cFolder);}}/>);
   if (page==="reunioes-folder"&&cFolder) {const fresh=reunioes.find(f=>f.id===cFolder.id)||cFolder; return (<ReunioesFolder folder={fresh} onBack={nReun} onSelect={nReunDetail} onAdd={(r)=>addReuniao(fresh.id,r)} onRename={(nome)=>renameFolder(fresh.id,nome)} onDeleteFolder={()=>{removeFolder(fresh.id);nReun();}}/>);}
   if (page==="reunioes") return (<ReunioesLanding folders={reunioes} onBack={nH} onSelect={nFolder} onAdd={addFolder} onDelete={removeFolder}/>);
