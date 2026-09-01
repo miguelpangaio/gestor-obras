@@ -57,10 +57,39 @@ input,textarea,select,button{font-family:inherit}
 <script>
 firebase.initializeApp({apiKey:"AIzaSyDTZRizLtPeRf3T5e_4hv1QZnD9GddcWGs",authDomain:"gestor-obras-d996c.firebaseapp.com",projectId:"gestor-obras-d996c",storageBucket:"gestor-obras-d996c.firebasestorage.app",messagingSenderId:"314932781905",appId:"1:314932781905:web:1b2cf8b984f971b25d2970"});
 var db=firebase.firestore();
+window.syncStatus={state:"ok",lastError:"",lastSync:"",sizes:{},listeners:[]};
+window.syncStatus.notify=function(){window.syncStatus.listeners.forEach(function(fn){fn({...window.syncStatus});});};
+window.syncStatus.subscribe=function(fn){window.syncStatus.listeners.push(fn);return function(){window.syncStatus.listeners=window.syncStatus.listeners.filter(function(f){return f!==fn;});};};
 window.dataStore={
-  save:function(c,d){try{localStorage.setItem('go-'+c,JSON.stringify(d));}catch(e){}db.collection('userData').doc(c).set({data:JSON.stringify(d),updated:new Date().toISOString()}).catch(function(e){console.warn(e);});},
+  save:function(c,d){
+    var json=JSON.stringify(d);
+    var sizeKB=Math.round(json.length/1024);
+    window.syncStatus.sizes[c]=sizeKB;
+    try{localStorage.setItem('go-'+c,json);}catch(e){}
+    // Firestore limit ~1MB per doc; the data field is stringified inside another object
+    if(json.length>900000){
+      window.syncStatus.state="error";
+      window.syncStatus.lastError="Documento '"+c+"' demasiado grande ("+sizeKB+"KB). Limite Firestore: ~900KB.";
+      window.syncStatus.notify();
+      console.error("Firestore save skipped for '"+c+"': "+sizeKB+"KB exceeds safe limit");
+      return;
+    }
+    db.collection('userData').doc(c).set({data:json,updated:new Date().toISOString()})
+      .then(function(){
+        window.syncStatus.state="ok";
+        window.syncStatus.lastSync=new Date().toISOString();
+        window.syncStatus.lastError="";
+        window.syncStatus.notify();
+      })
+      .catch(function(e){
+        window.syncStatus.state="error";
+        window.syncStatus.lastError="Erro ao guardar '"+c+"': "+e.message;
+        window.syncStatus.notify();
+        console.error("Firestore save error for '"+c+"':",e);
+      });
+  },
   load:function(c,cb){var cached=null;try{var r=localStorage.getItem('go-'+c);if(r)cached=JSON.parse(r);}catch(e){}if(cached)cb(cached);db.collection('userData').doc(c).get().then(function(doc){if(doc.exists){var d=JSON.parse(doc.data().data);try{localStorage.setItem('go-'+c,JSON.stringify(d));}catch(e){}cb(d);}else if(!cached){cb([]);}}).catch(function(e){if(!cached)cb([]);});},
-  listen:function(c,cb){return db.collection('userData').doc(c).onSnapshot(function(doc){if(doc.exists){var d=JSON.parse(doc.data().data);try{localStorage.setItem('go-'+c,JSON.stringify(d));}catch(e){}cb(d);}},function(e){console.warn(e);});}
+  listen:function(c,cb){return db.collection('userData').doc(c).onSnapshot(function(doc){if(doc.exists){var d=JSON.parse(doc.data().data);try{localStorage.setItem('go-'+c,JSON.stringify(d));}catch(e){}cb(d);window.syncStatus.state="ok";window.syncStatus.lastSync=new Date().toISOString();window.syncStatus.notify();}},function(e){window.syncStatus.state="error";window.syncStatus.lastError="Listener '"+c+"': "+e.message;window.syncStatus.notify();console.warn(e);});}
 };
 </script>
 <script type="text/babel">
@@ -643,6 +672,9 @@ function Landing({obras,onType,onNew,onSelObra,onReunioes,onExcel,reunioes,excel
   const today=new Date();const dateStr=today.getDate()+" de "+MP[today.getMonth()]+" de "+today.getFullYear();
   const [showNotifPanel,setShowNotifPanel]=useState(false);
   const [pdfGenerating,setPdfGenerating]=useState(false);
+  const [showSyncPanel,setShowSyncPanel]=useState(false);
+  const [syncState,setSyncState]=useState({state:"ok",lastError:"",lastSync:"",sizes:{}});
+  useEffect(()=>{const u=window.syncStatus.subscribe(setSyncState);setSyncState({...window.syncStatus});return u;},[]);
   const handlePDF=()=>{setPdfGenerating(true);setTimeout(()=>{try{generateWeeklyPDF(obras,events,todos);}catch(e){console.error(e);alert("Erro ao gerar PDF: "+e.message);}setPdfGenerating(false);},100);};
 
   return (
@@ -650,12 +682,24 @@ function Landing({obras,onType,onNew,onSelObra,onReunioes,onExcel,reunioes,excel
       <div style={{padding:"28px 24px 16px",background:"linear-gradient(180deg,var(--card) 0%,var(--bg) 100%)"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><div><h1 style={{fontSize:24,fontWeight:800,color:"var(--text)",margin:0,letterSpacing:-.8}}>Gestor<span style={{color:"var(--accent)"}}>Obras</span></h1><div style={{fontSize:11,color:"var(--text-muted)",marginTop:2}}>{dateStr}</div></div><div style={{display:"flex",gap:6,alignItems:"center"}}>
             <button onClick={handlePDF} disabled={pdfGenerating} style={{background:"var(--card)",border:"1px solid var(--card-border)",borderRadius:6,color:pdfGenerating?"#475569":"var(--accent)",cursor:pdfGenerating?"wait":"pointer",fontSize:10,padding:"4px 8px",fontWeight:600,display:"flex",alignItems:"center",gap:3}}>{pdfGenerating?"⏳":"📄"} PDF</button>
             <button onClick={()=>setShowNotifPanel(!showNotifPanel)} style={{background:showNotifPanel?"var(--accent-soft)":"var(--card)",border:"1px solid "+(showNotifPanel?"var(--accent-border)":"var(--card-border)"),borderRadius:6,color:notif.notifEnabled?"#16a34a":"var(--text-muted)",cursor:"pointer",fontSize:10,padding:"4px 8px",fontWeight:600,display:"flex",alignItems:"center",gap:3,position:"relative"}}>{notif.notifEnabled?"🔔":"🔕"}{notif.notifEnabled&&<span style={{width:5,height:5,borderRadius:3,background:"#16a34a",position:"absolute",top:2,right:2}}/>}</button>
+            <button onClick={()=>setShowSyncPanel(!showSyncPanel)} style={{background:syncState.state==="error"?"#dc262620":"var(--card)",border:"1px solid "+(syncState.state==="error"?"#dc2626":"var(--card-border)"),borderRadius:6,color:syncState.state==="error"?"#dc2626":"#16a34a",cursor:"pointer",fontSize:10,padding:"4px 8px",fontWeight:600,display:"flex",alignItems:"center",gap:3,position:"relative"}}>{syncState.state==="error"?"🔴":"🟢"}<span style={{fontSize:9,color:"var(--text-dim)"}}>Sync</span></button>
             <button onClick={onToggleTheme} style={{background:"var(--card)",border:"1px solid var(--card-border)",borderRadius:6,color:"var(--text-muted)",cursor:"pointer",fontSize:10,padding:"4px 8px",fontWeight:600,display:"flex",alignItems:"center",gap:3}}>{theme==="dark"?"☀️":"🌙"}</button>
             <div style={{fontSize:9,color:"var(--text-dim)",background:"var(--card)",padding:"4px 10px",borderRadius:6,border:"1px solid var(--card-border)",fontWeight:600,letterSpacing:1}}>E-REDES · OAZ</div>
           </div></div></div>
       <div style={{padding:"0 20px 28px",maxWidth:1400,margin:"0 auto"}}>
         {/* Notification Settings Panel */}
         {showNotifPanel && <div style={{marginBottom:12}}><NotifSettingsPanel notif={notif} onClose={()=>setShowNotifPanel(false)} /></div>}
+        {/* Sync Diagnostic Panel */}
+        {showSyncPanel && <div style={{marginBottom:12}}><WBox>
+          <WTitle icon={syncState.state==="error"?"🔴":"🟢"} text={"Sincronização Firebase"} right={<button onClick={()=>setShowSyncPanel(false)} style={{background:"none",border:"1px solid var(--card-border)",borderRadius:4,color:"var(--text-muted)",cursor:"pointer",fontSize:10,padding:"2px 8px"}}>✕</button>}/>
+          <div style={{fontSize:11,color:syncState.state==="error"?"#dc2626":"#16a34a",fontWeight:600,marginBottom:8}}>{syncState.state==="error"?"⚠️ Erro de sincronização":"✅ Sincronização ativa"}</div>
+          {syncState.lastError&&<div style={{fontSize:10,color:"#dc2626",background:"#dc262610",padding:"8px 10px",borderRadius:6,marginBottom:8,border:"1px solid #dc262630",wordBreak:"break-word"}}>{syncState.lastError}</div>}
+          {syncState.lastSync&&<div style={{fontSize:10,color:"var(--text-muted)",marginBottom:8}}>Última sync: {fmtDT(syncState.lastSync)}</div>}
+          <div style={{fontSize:10,fontWeight:600,color:"var(--text)",marginBottom:4}}>Tamanho dos dados:</div>
+          {Object.entries(syncState.sizes).length>0?Object.entries(syncState.sizes).sort((a,b)=>b[1]-a[1]).map(([k,v])=>(<div key={k} style={{display:"flex",justifyContent:"space-between",padding:"3px 0",borderBottom:"1px solid var(--card-border)",fontSize:10}}><span style={{color:"var(--text-muted)"}}>{k}</span><span style={{fontWeight:700,color:v>800?"#dc2626":v>500?"#f59e0b":"#16a34a"}}>{v} KB</span></div>)):<div style={{fontSize:10,color:"var(--text-dim)"}}>Guarda algo para ver o tamanho</div>}
+          <div style={{fontSize:9,color:"var(--text-dim)",marginTop:8}}>Limite Firestore: ~900 KB por documento. Se um doc exceder, a sync falha.</div>
+          <button onClick={()=>{window.dataStore.save("obras",obras);window.dataStore.save("events",events);window.dataStore.save("todos",todos);window.dataStore.save("contacts",contacts);}} style={{marginTop:8,padding:"6px 0",borderRadius:4,border:"none",background:"var(--accent)",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",width:"100%"}}>🔄 Forçar sincronização</button>
+        </WBox></div>}
         {/* KPIs */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
           {[{n:active.length,l:"Ativas",icon:"📂",color:"#3b82f6"},{n:done.length,l:"Concluídas",icon:"✅",color:"#16a34a"},{n:alerts.length,l:"Alertas",icon:"🔔",color:alerts.length>0?"#dc2626":"#64748b"},{n:totalTarefas,l:"Tarefas",icon:"📋",color:totalTarefas>0?"#f59e0b":"#64748b"}].map((k,i)=>(<div key={i} style={{background:"var(--card)",borderRadius:10,padding:"14px 12px",border:"1px solid var(--card-border)",textAlign:"center"}}><div style={{fontSize:18,marginBottom:4}}>{k.icon}</div><div style={{fontSize:24,fontWeight:800,color:k.color}}>{k.n}</div><div style={{fontSize:10,color:"var(--text-dim)",fontWeight:500,marginTop:2}}>{k.l}</div></div>))}
