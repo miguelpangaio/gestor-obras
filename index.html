@@ -1385,11 +1385,12 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,syncRows,syncMeta,onSa
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
                 <button onClick={()=>setFilter(null)} style={{padding:"5px 10px",borderRadius:5,border:"1px solid var(--card-border)",background:"var(--card)",color:"var(--text-muted)",fontSize:11,cursor:"pointer",fontWeight:600}}>← Voltar</button>
                 <div style={{flex:1,fontSize:12,fontWeight:700,color:"var(--text)"}}>{filter.label}: <span style={{color:"var(--accent)"}}>{filter.value}</span></div>
-                <span style={{fontSize:11,color:"var(--text-dim)",fontWeight:600}}>{(rows||[]).filter(r=>r[filter.field]===filter.value||(filter.field==="conc"&&(r.conc||"").toUpperCase()===filter.value.toUpperCase())).length} resultados</span>
+                <span style={{fontSize:11,color:"var(--text-dim)",fontWeight:600}}>{(rows||[]).filter(r=>{const isSE=filter.value==="Sem estado"||filter.value==="Sem concelho";if(filter.field==="conc")return isSE?!r.conc:(r.conc||"").toUpperCase()===filter.value.toUpperCase();return isSE?!r[filter.field]:r[filter.field]===filter.value;}).length} resultados</span>
               </div>
               {(rows||[]).filter(r=>{
-                if(filter.field==="conc") return (r.conc||"").toUpperCase()===filter.value.toUpperCase();
-                return r[filter.field]===filter.value;
+                const isSemEstado=filter.value==="Sem estado"||filter.value==="Sem concelho";
+                if(filter.field==="conc") return isSemEstado?!r.conc:(r.conc||"").toUpperCase()===filter.value.toUpperCase();
+                return isSemEstado?!r[filter.field]:r[filter.field]===filter.value;
               }).map((r,i)=><Card key={i} r={r} i={i}/>)}
             </div>):(
             <div>
