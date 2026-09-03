@@ -1195,10 +1195,10 @@ function slimRow(r){
     adj:String(r[find(["Adjudica"])]||""),
     dfp:String(r[find(["Data fim programada (processo)","fim programada (processo)"])]||""),
     ua:String(r[find(["ltima Atualiza"])]||""),
-    eoe:String(r[find(["Estado Operacional Exec"])]||""),
+    eoe:String(r[find(["Estado Operacional Execução"])]||"").trim(),
     doe:String(r[find(["Dias Est. Op. Exec","Dias Est. Op. Execu"])]||""),
     obe:String(r[find(["Observa","Execu"])]||""),
-    eoal:String(r[find(["Estado Operacional Aut","Aut. e Lic"])]||""),
+    eoal:String(r[find(["Estado Operacional Aut","Aut. e Lic"])]||"").trim(),
     doal:String(r[find(["Dias Est. Op. Aut"])]||""),
     obal:String(r[find(["Observa","AUT. E LIC","LIC."])]||"")
   };
@@ -1214,6 +1214,9 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,syncRows,syncMeta,onSa
   const [search,setSearch]=useState("");
   const [searchResults,setSearchResults]=useState([]);
   const [filter,setFilter]=useState(null); // {field,value,label}
+  const [diasLimite,setDiasLimite]=useState(()=>{try{return parseInt(localStorage.getItem("go-dias-limite"))||10;}catch(e){return 10;}});
+  const [diasPrazo,setDiasPrazo]=useState(()=>{try{return parseInt(localStorage.getItem("go-dias-prazo"))||10;}catch(e){return 10;}});
+  const [diasLic,setDiasLic]=useState(()=>{try{return parseInt(localStorage.getItem("go-dias-lic"))||15;}catch(e){return 15;}});
   const [rows,setRows]=useState(null);
   const [meta,setMeta]=useState(null);
   const fileRef=useRef(null);
@@ -1238,33 +1241,41 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,syncRows,syncMeta,onSa
     }
   },[syncRows,syncMeta]);
 
-  const doAnalyze=(data,prev)=>{
+  const doAnalyze=(data,prev,cfg)=>{
+    const lim=cfg?.estagnada||diasLimite||10;
+    const limPrazo=cfg?.prazo||diasPrazo||10;
+    const limLic=cfg?.lic||diasLic||15;
     const r={totais:{},estados:{},estadosOT:{},estadosEOT:{},concelhos:{},novas:[],removidas:[],mudancas:[],alertas:[]};
     r.totais.total=data.length;
     r.totais.processos=new Set(data.map(x=>x.proc).filter(Boolean)).size;
     r.totais.dps=new Set(data.map(x=>x.dp).filter(Boolean)).size;
     data.forEach(x=>{const e=x.ep||"Sem estado";r.estados[e]=(r.estados[e]||0)+1;});
-    data.forEach(x=>{const e=x.eoe||"Sem estado";r.estadosOT[e]=(r.estadosOT[e]||0)+1;});
+    data.forEach(x=>{const e=x.eoe||x.eoal||"Sem estado";r.estadosOT[e]=(r.estadosOT[e]||0)+1;});
     data.forEach(x=>{const e=x.eot||"Sem estado";r.estadosEOT[e]=(r.estadosEOT[e]||0)+1;});
     data.forEach(x=>{const c=x.conc||"Sem concelho";r.concelhos[c]=(r.concelhos[c]||0)+1;});
     const hoje=new Date();
     data.forEach(x=>{
-      if(x.ua){const d=new Date(x.ua);const dias=Math.floor((hoje-d)/86400000);
-        if(dias>5&&x.eot&&x.eot.toLowerCase()!=="fechada"){
-          r.alertas.push({tipo:"parada",proc:x.proc,dp:x.dp,dsg:x.dsg,dias,ep:x.ep,conc:x.conc,eoe:x.eoe,eot:x.eot,doe:x.doe});
-        }}
       const prazo=x.dc||x.dfp||x.dbf;
       if(prazo){const dp=new Date(prazo);const diasP=Math.floor((hoje-dp)/86400000);
         if(diasP>0&&x.eot&&x.eot.toLowerCase()!=="fechada"){
           r.alertas.push({tipo:"prazo",proc:x.proc,dp:x.dp,dsg:x.dsg,dias:diasP,ep:x.ep,conc:x.conc,eoe:x.eoe,eot:x.eot,prazo:prazo});
-        }else if(diasP>-10&&diasP<=0&&x.eot&&x.eot.toLowerCase()!=="fechada"){
+        }else if(diasP>-limPrazo&&diasP<=0&&x.eot&&x.eot.toLowerCase()!=="fechada"){
           r.alertas.push({tipo:"prazo_proximo",proc:x.proc,dp:x.dp,dsg:x.dsg,dias:Math.abs(diasP),ep:x.ep,conc:x.conc,eoe:x.eoe,eot:x.eot,prazo:prazo});
         }}
-      if(x.doal&&parseInt(x.doal)>15&&x.eoal){
+      if(x.doal&&parseInt(x.doal)>limLic&&x.eoal){
         r.alertas.push({tipo:"licenca",proc:x.proc,dp:x.dp,dsg:x.dsg,dias:parseInt(x.doal),ep:x.ep,conc:x.conc,eoal:x.eoal,obal:x.obal});
       }
+      // Alerta: estado operacional sem alteração há mais de 10 dias
+      const diasExec=x.doe?parseInt(x.doe):0;
+      const diasAL=x.doal?parseInt(x.doal):0;
+      const diasMax=Math.max(diasExec,diasAL);
+      if(diasMax>lim&&x.eot&&x.eot.toLowerCase()!=="fechada"){
+        const estado=diasExec>=diasAL?(x.eoe||"Sem estado"):(x.eoal||"Sem estado");
+        const obs=diasExec>=diasAL?(x.obe||""):(x.obal||"");
+        r.alertas.push({tipo:"estagnada",proc:x.proc,dp:x.dp,ot:x.ot,dsg:x.dsg,dias:diasMax,ep:x.ep,conc:x.conc,eoe:x.eoe,eoal:x.eoal,estado,obs,eot:x.eot});
+      }
     });
-    r.alertas.sort((a,b)=>{const ord={prazo:0,prazo_proximo:1,parada:2,licenca:3};return(ord[a.tipo]||9)-(ord[b.tipo]||9)||b.dias-a.dias;});
+    r.alertas.sort((a,b)=>{const ord={prazo:0,prazo_proximo:1,estagnada:2,licenca:3};return(ord[a.tipo]||9)-(ord[b.tipo]||9)||b.dias-a.dias;});
     if(prev&&prev.length>0){
       const pMap=new Map();prev.forEach(x=>pMap.set(x.proc+"_"+x.dp+"_"+x.ot,x));
       const cMap=new Map();data.forEach(x=>cMap.set(x.proc+"_"+x.dp+"_"+x.ot,x));
@@ -1303,6 +1314,21 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,syncRows,syncMeta,onSa
     }catch(err){alert("Erro: "+err.message);}
     setLoading(false);
     if(fileRef.current)fileRef.current.value="";
+  };
+
+  const getCfg=(overrides)=>({estagnada:diasLimite,prazo:diasPrazo,lic:diasLic,...overrides});
+  const reAnalyze=(cfg)=>{
+    if(rows&&rows.length>0){
+      const savedDiff=excelLoad("lastDiff");
+      const analysis=doAnalyze(rows,null,cfg);
+      if(savedDiff){analysis.novas=savedDiff.novas||[];analysis.removidas=savedDiff.removidas||[];analysis.mudancas=savedDiff.mudancas||[];}
+      setResult(analysis);
+    }
+  };
+  const changeThreshold=(key,lsKey,setter,v)=>{
+    const n=Math.max(1,parseInt(v)||1);
+    setter(n);try{localStorage.setItem(lsKey,String(n));}catch(e){}
+    reAnalyze({...getCfg(),[key]:n});
   };
 
   const doSearch=(q)=>{
@@ -1386,9 +1412,10 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,syncRows,syncMeta,onSa
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
                 <button onClick={()=>setFilter(null)} style={{padding:"5px 10px",borderRadius:5,border:"1px solid var(--card-border)",background:"var(--card)",color:"var(--text-muted)",fontSize:11,cursor:"pointer",fontWeight:600}}>← Voltar</button>
                 <div style={{flex:1,fontSize:12,fontWeight:700,color:"var(--text)"}}>{filter.label}: <span style={{color:"var(--accent)"}}>{filter.value}</span></div>
-                <span style={{fontSize:11,color:"var(--text-dim)",fontWeight:600}}>{(rows||[]).filter(r=>{const val=filter.field==="conc"?(r.conc||"Sem concelho"):(r[filter.field]||"Sem estado");return val===filter.value;}).length} resultados</span>
+                <span style={{fontSize:11,color:"var(--text-dim)",fontWeight:600}}>{(rows||[]).filter(r=>{if(filter.field==="_eoc"){const val=r.eoe||r.eoal||"Sem estado";return val===filter.value;}const val=filter.field==="conc"?(r.conc||"Sem concelho"):(r[filter.field]||"Sem estado");return val===filter.value;}).length} resultados</span>
               </div>
               {(rows||[]).filter(r=>{
+                if(filter.field==="_eoc"){const val=r.eoe||r.eoal||"Sem estado";return val===filter.value;}
                 const val=filter.field==="conc"?(r.conc||"Sem concelho"):(r[filter.field]||"Sem estado");
                 return val===filter.value;
               }).map((r,i)=><Card key={i} r={r} i={i}/>)}
@@ -1409,8 +1436,8 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,syncRows,syncMeta,onSa
                 <span style={{color:"var(--text-dim)",fontSize:10}}>›</span>
               </div>))}
             </div></WBox>
-            <WBox style={{marginBottom:10}}><WTitle icon="⚙️" text="Estado Operacional Execução"/><div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-              {Object.entries(result.estadosOT).sort((a,b)=>b[1]-a[1]).map(([e,n])=>(<div key={e} onClick={()=>setFilter({field:"eoe",value:e,label:"Estado Op. Execução"})} style={{background:"var(--bg)",padding:"6px 10px",borderRadius:6,border:"1px solid var(--card-border)",cursor:"pointer",transition:"transform .1s"}} onMouseEnter={ev=>ev.currentTarget.style.transform="scale(1.03)"} onMouseLeave={ev=>ev.currentTarget.style.transform="none"}>
+            <WBox style={{marginBottom:10}}><WTitle icon="⚙️" text="Estado Operacional"/><div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+              {Object.entries(result.estadosOT).sort((a,b)=>b[1]-a[1]).map(([e,n])=>(<div key={e} onClick={()=>setFilter({field:"_eoc",value:e,label:"Estado Operacional"})} style={{background:"var(--bg)",padding:"6px 10px",borderRadius:6,border:"1px solid var(--card-border)",cursor:"pointer",transition:"transform .1s"}} onMouseEnter={ev=>ev.currentTarget.style.transform="scale(1.03)"} onMouseLeave={ev=>ev.currentTarget.style.transform="none"}>
                 <div style={{fontSize:11,fontWeight:700,color:"var(--text)"}}>{n}</div><div style={{fontSize:9,color:"var(--text-dim)"}}>{e}</div>
               </div>))}
             </div></WBox>
@@ -1457,6 +1484,21 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,syncRows,syncMeta,onSa
           </div>)}
 
           {tab==="alertas"&&(<div>
+            <WBox style={{marginBottom:10}}>
+              <WTitle icon="⚙️" text="Configuração de alertas"/>
+              <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
+                {[
+                  {label:"Prazo próximo",val:diasPrazo,fn:v=>changeThreshold("prazo","go-dias-prazo",setDiasPrazo,v),unit:"dias antes",color:"#f59e0b"},
+                  {label:"Estagnada",val:diasLimite,fn:v=>changeThreshold("estagnada","go-dias-limite",setDiasLimite,v),unit:"dias",color:"#e85d04"},
+                  {label:"Licenciamento parado",val:diasLic,fn:v=>changeThreshold("lic","go-dias-lic",setDiasLic,v),unit:"dias",color:"#8b5cf6"},
+                ].map((t,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:5,background:"var(--bg)",padding:"5px 8px",borderRadius:6,border:"1px solid var(--card-border)"}}>
+                  <span style={{fontSize:9,color:t.color,fontWeight:700}}>●</span>
+                  <span style={{fontSize:10,color:"var(--text-muted)"}}>{t.label}</span>
+                  <input type="number" min="1" max="99" value={t.val} onChange={e=>t.fn(e.target.value)} style={{width:38,padding:"2px 4px",borderRadius:4,border:"1px solid var(--card-border)",background:"var(--card)",color:t.color,fontSize:11,fontWeight:700,textAlign:"center",outline:"none"}}/>
+                  <span style={{fontSize:9,color:"var(--text-dim)"}}>{t.unit}</span>
+                </div>))}
+              </div>
+            </WBox>
             {result.alertas.length===0?(<WBox><div style={{textAlign:"center",padding:16,color:"var(--text-dim)"}}>✅ Sem alertas</div></WBox>):(
               <div>
                 {result.alertas.filter(a=>a.tipo==="prazo").length>0&&<div style={{fontSize:11,fontWeight:700,color:"#dc2626",marginBottom:6}}>🚨 Prazo ultrapassado ({result.alertas.filter(a=>a.tipo==="prazo").length})</div>}
@@ -1479,17 +1521,20 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,syncRows,syncMeta,onSa
                   <div style={{display:"flex",gap:8,marginTop:3,fontSize:9,color:"var(--text-dim)",flexWrap:"wrap"}}><span>{a.dp}</span><span>📍 {a.conc}</span><span>OT: {a.eot}</span><span>Prazo: {fmtD(a.prazo)}</span></div>
                 </WBox>))}
 
-                {result.alertas.filter(a=>a.tipo==="parada").length>0&&<div style={{fontSize:11,fontWeight:700,color:"#f97316",marginTop:10,marginBottom:6}}>⚠️ OTs sem atualização há +5 dias ({result.alertas.filter(a=>a.tipo==="parada").length})</div>}
-                {result.alertas.filter(a=>a.tipo==="parada").map((a,i)=>(<WBox key={"s"+i} style={{padding:10,marginBottom:6,borderLeft:"3px solid "+(a.dias>15?"#dc2626":"#f97316")}}>
+
+                {result.alertas.filter(a=>a.tipo==="estagnada").length>0&&<div style={{fontSize:11,fontWeight:700,color:"#e85d04",marginTop:10,marginBottom:6}}>🔄 Estado operacional sem alteração há +{diasLimite} dias ({result.alertas.filter(a=>a.tipo==="estagnada").length})</div>}
+                {result.alertas.filter(a=>a.tipo==="estagnada").map((a,i)=>(<WBox key={"e"+i} style={{padding:10,marginBottom:6,borderLeft:"3px solid "+(a.dias>20?"#dc2626":"#e85d04")}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}>
                     <span style={{fontSize:11,fontWeight:700,color:"var(--text)",fontFamily:"monospace"}}>{a.proc}</span>
-                    <span style={{fontSize:10,fontWeight:700,color:a.dias>15?"#dc2626":"#f97316",background:a.dias>15?"#dc262615":"#f9731615",padding:"2px 6px",borderRadius:4}}>⏰ {a.dias}d sem att</span>
+                    <span style={{fontSize:10,fontWeight:700,color:a.dias>20?"#dc2626":"#e85d04",background:a.dias>20?"#dc262615":"#e85d0415",padding:"2px 6px",borderRadius:4}}>🔄 {a.dias}d no mesmo estado</span>
                   </div>
                   <div style={{fontSize:10,color:"var(--text-muted)"}}>{a.dsg}</div>
-                  <div style={{display:"flex",gap:8,marginTop:3,fontSize:9,color:"var(--text-dim)",flexWrap:"wrap"}}><span>{a.dp}</span><span>📍 {a.conc}</span><span>OT: {a.eot}</span>{a.eoe&&<span>⚙️ {a.eoe}</span>}</div>
+                  <div style={{display:"flex",gap:8,marginTop:3,fontSize:9,color:"var(--text-dim)",flexWrap:"wrap"}}><span>{a.dp}</span><span>📍 {a.conc}</span><span>OT: {a.eot}</span></div>
+                  <div style={{fontSize:10,color:"#e85d04",marginTop:3}}>⚙️ {a.estado}</div>
+                  {a.obs&&<div style={{fontSize:9,color:"var(--text-muted)",marginTop:2}}>📝 {a.obs}</div>}
                 </WBox>))}
 
-                {result.alertas.filter(a=>a.tipo==="licenca").length>0&&<div style={{fontSize:11,fontWeight:700,color:"#8b5cf6",marginTop:10,marginBottom:6}}>📋 Licenciamento parado há +15 dias ({result.alertas.filter(a=>a.tipo==="licenca").length})</div>}
+                {result.alertas.filter(a=>a.tipo==="licenca").length>0&&<div style={{fontSize:11,fontWeight:700,color:"#8b5cf6",marginTop:10,marginBottom:6}}>📋 Licenciamento parado há +{diasLic} dias ({result.alertas.filter(a=>a.tipo==="licenca").length})</div>}
                 {result.alertas.filter(a=>a.tipo==="licenca").map((a,i)=>(<WBox key={"l"+i} style={{padding:10,marginBottom:6,borderLeft:"3px solid #8b5cf6"}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}>
                     <span style={{fontSize:11,fontWeight:700,color:"var(--text)",fontFamily:"monospace"}}>{a.proc}</span>
