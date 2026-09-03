@@ -1254,7 +1254,7 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,syncRows,syncMeta,onSa
     r.totais.processos=new Set(data.map(x=>x.proc).filter(Boolean)).size;
     r.totais.dps=new Set(data.map(x=>x.dp).filter(Boolean)).size;
     data.forEach(x=>{const e=x.ep||"Sem estado";r.estados[e]=(r.estados[e]||0)+1;});
-    data.forEach(x=>{const hasInfo=x.eoe||x.eoal||x.obe||x.obal;const e=hasInfo?(x.eoe||x.eoal||"Com observações"):"Sem estado";r.estadosOT[e]=(r.estadosOT[e]||0)+1;});
+    data.forEach(x=>{const e=x.eoe||x.eoal||"Sem estado";r.estadosOT[e]=(r.estadosOT[e]||0)+1;});
     data.forEach(x=>{const e=x.eot||"Sem estado";r.estadosEOT[e]=(r.estadosEOT[e]||0)+1;});
     data.forEach(x=>{const c=x.conc||"Sem concelho";r.concelhos[c]=(r.concelhos[c]||0)+1;});
     const hoje=new Date();
@@ -1420,10 +1420,10 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,syncRows,syncMeta,onSa
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
                 <button onClick={()=>setFilter(null)} style={{padding:"5px 10px",borderRadius:5,border:"1px solid var(--card-border)",background:"var(--card)",color:"var(--text-muted)",fontSize:11,cursor:"pointer",fontWeight:600}}>← Voltar</button>
                 <div style={{flex:1,fontSize:12,fontWeight:700,color:"var(--text)"}}>{filter.label}: <span style={{color:"var(--accent)"}}>{filter.value}</span></div>
-                <span style={{fontSize:11,color:"var(--text-dim)",fontWeight:600}}>{(rows||[]).filter(r=>{if(filter.field==="_eoc"){const hasInfo=r.eoe||r.eoal||r.obe||r.obal;const val=hasInfo?(r.eoe||r.eoal||"Com observações"):"Sem estado";return val===filter.value;}const val=filter.field==="conc"?(r.conc||"Sem concelho"):(r[filter.field]||"Sem estado");return val===filter.value;}).length} resultados</span>
+                <span style={{fontSize:11,color:"var(--text-dim)",fontWeight:600}}>{(rows||[]).filter(r=>{if(filter.field==="_eoc"){const val=r.eoe||r.eoal||"Sem estado";return val===filter.value;}const val=filter.field==="conc"?(r.conc||"Sem concelho"):(r[filter.field]||"Sem estado");return val===filter.value;}).length} resultados</span>
               </div>
               {(rows||[]).filter(r=>{
-                if(filter.field==="_eoc"){const hasInfo=r.eoe||r.eoal||r.obe||r.obal;const val=hasInfo?(r.eoe||r.eoal||"Com observações"):"Sem estado";return val===filter.value;}
+                if(filter.field==="_eoc"){const val=r.eoe||r.eoal||"Sem estado";return val===filter.value;}
                 const val=filter.field==="conc"?(r.conc||"Sem concelho"):(r[filter.field]||"Sem estado");
                 return val===filter.value;
               }).map((r,i)=><Card key={i} r={r} i={i}/>)}
