@@ -1179,6 +1179,8 @@ function parseExcel(file){
 function slimRow(r){
   const keys=Object.keys(r);
   const find=(terms)=>keys.find(k=>{const kl=k.toLowerCase();return terms.some(t=>kl.includes(t.toLowerCase()));});
+  const foundEoe=find(["Estado Operacional Execução"]);
+  const foundEoal=find(["Estado Operacional Aut","Aut. e Lic"]);
   return {
     proc:String(r[find(["Processo de Origem","processo"])]||""),
     tipo:String(r[find(["Tipo de Processo","Tipo Processo"])]||""),
@@ -1195,12 +1197,14 @@ function slimRow(r){
     adj:String(r[find(["Adjudica"])]||""),
     dfp:String(r[find(["Data fim programada (processo)","fim programada (processo)"])]||""),
     ua:String(r[find(["ltima Atualiza"])]||""),
-    eoe:String(r[find(["Estado Operacional Execução"])]||"").trim(),
+    eoe:String(r[foundEoe]||"").trim(),
     doe:String(r[find(["Dias Est. Op. Exec","Dias Est. Op. Execu"])]||""),
     obe:String(r[find(["Observa","Execu"])]||""),
     eoal:String(r[find(["Estado Operacional Aut","Aut. e Lic"])]||"").trim(),
     doal:String(r[find(["Dias Est. Op. Aut"])]||""),
-    obal:String(r[find(["Observa","AUT. E LIC","LIC."])]||"")
+    obal:String(r[find(["Observa","AUT. E LIC","LIC."])]||""),
+    _colEoe:foundEoe||"NÃO ENCONTRADA",
+    _colEoal:foundEoal||"NÃO ENCONTRADA"
   };
 }
 
@@ -1407,6 +1411,10 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,syncRows,syncMeta,onSa
           </div>
 
           {tab==="resumo"&&(<div>
+            {/* Diagnóstico de colunas */}
+            {rows&&rows[0]&&rows[0]._colEoe&&<div style={{marginBottom:8,padding:"6px 10px",borderRadius:6,background:"var(--bg)",border:"1px solid var(--card-border)",fontSize:9,color:"var(--text-dim)"}}>
+              <span style={{fontWeight:700}}>Colunas mapeadas:</span> Est.Op.Exec → <span style={{color:rows[0]._colEoe==="NÃO ENCONTRADA"?"#dc2626":"#16a34a",fontWeight:600}}>"{rows[0]._colEoe}"</span> | Est.Op.Aut.Lic → <span style={{color:rows[0]._colEoal==="NÃO ENCONTRADA"?"#dc2626":"#16a34a",fontWeight:600}}>"{rows[0]._colEoal}"</span>
+            </div>}
             {/* Filtro ativo: mostrar as linhas */}
             {filter?(<div>
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
