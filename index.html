@@ -95,11 +95,12 @@ window.dataStore={
 <script type="text/babel">
 const {useState,useEffect,useCallback,useMemo,useRef} = React;
 
-const TIPOS = ["RP","OCR","PLR"];
+const TIPOS = ["RP","OCR","PLR","Produtores"];
 const TM = {
   RP:{label:"Obras de Investimento",desc:"Expansão da rede",icon:"🏗️",bg:"linear-gradient(135deg,#1e3a5f,#2563eb)",accent:"#3b82f6",card:"#dbeafe",dark:"#1e3a5f"},
   OCR:{label:"OCR",desc:"Conservação e reparação",icon:"🔧",bg:"linear-gradient(135deg,#78350f,#d97706)",accent:"#d97706",card:"#fef3c7",dark:"#78350f"},
-  PLR:{label:"PLR",desc:"Pedidos de ligação",icon:"⚡",bg:"linear-gradient(135deg,#14532d,#16a34a)",accent:"#16a34a",card:"#dcfce7",dark:"#14532d"}
+  PLR:{label:"PLR",desc:"Pedidos de ligação",icon:"⚡",bg:"linear-gradient(135deg,#14532d,#16a34a)",accent:"#16a34a",card:"#dcfce7",dark:"#14532d"},
+  Produtores:{label:"Produtores",desc:"Produtores de energia",icon:"☀️",bg:"linear-gradient(135deg,#5b21b6,#8b5cf6)",accent:"#8b5cf6",card:"#ede9fe",dark:"#5b21b6"}
 };
 const TAGS_PRESET = ["Urgente","Aguarda PSE","Aguarda CM","Aguarda Licença","Aguarda DGEG","Aguarda Cliente","Em Execução","Parada","Prioridade"];
 const TAG_COLORS = {"Urgente":"#dc2626","Aguarda PSE":"#d97706","Aguarda CM":"#8b5cf6","Aguarda Licença":"#3b82f6","Aguarda DGEG":"#6366f1","Aguarda Cliente":"#ec4899","Em Execução":"#16a34a","Parada":"#ef4444","Prioridade":"#f59e0b"};
@@ -324,7 +325,7 @@ function generateWeeklyPDF(obras, events, todos) {
     const dn = ta.filter(o => o.concluida).length;
     const tot = ta.length;
     const pct = tot > 0 ? Math.round((dn / tot) * 100) : 0;
-    const colors = { RP: [30, 58, 95], OCR: [120, 53, 15], PLR: [20, 83, 45] };
+    const colors = { RP: [30, 58, 95], OCR: [120, 53, 15], PLR: [20, 83, 45], Produtores: [91, 33, 182] };
     doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...(colors[t] || [0, 0, 0]));
     doc.text(t + " - " + m.label, mx, cy);
     doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(100, 116, 139);
@@ -392,7 +393,7 @@ function generateWeeklyPDF(obras, events, todos) {
     checkPage(16);
     drawLine(cy); cy += 4;
     const m = TM[t];
-    const colors = { RP: [30, 58, 95], OCR: [120, 53, 15], PLR: [20, 83, 45] };
+    const colors = { RP: [30, 58, 95], OCR: [120, 53, 15], PLR: [20, 83, 45], Produtores: [91, 33, 182] };
     doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(...(colors[t] || [0, 0, 0]));
     doc.text(t + " - Obras Ativas (" + list.length + ")", mx, cy); cy += 5;
     // Table header
