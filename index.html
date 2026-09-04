@@ -1266,12 +1266,13 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,syncRows,syncMeta,onSa
         }else if(diasP>-limPrazo&&diasP<=0&&x.eot&&x.eot.toLowerCase()!=="fechada"){
           r.alertas.push({tipo:"prazo_proximo",proc:x.proc,dp:x.dp,ot:x.ot,dsg:x.dsg,dias:Math.abs(diasP),ep:x.ep,conc:x.conc,eoe:x.eoe,eot:x.eot,prazo:prazo});
         }}
-      if(x.doal&&parseInt(x.doal)>limLic&&x.eoal){
+      if(x.doal&&parseInt(x.doal)>limLic&&x.eoal&&!x.eoal.toLowerCase().includes("fim processo")){
         r.alertas.push({tipo:"licenca",proc:x.proc,dp:x.dp,ot:x.ot,dsg:x.dsg,dias:parseInt(x.doal),ep:x.ep,conc:x.conc,eoal:x.eoal,obal:x.obal});
       }
-      // Alerta: estado operacional sem alteração há mais de 10 dias
+      // Alerta: estado operacional sem alteração há mais de X dias
+      const fimProc=x.eoal&&x.eoal.toLowerCase().includes("fim processo");
       const diasExec=x.doe?parseInt(x.doe):0;
-      const diasAL=x.doal?parseInt(x.doal):0;
+      const diasAL=(!fimProc&&x.doal)?parseInt(x.doal):0;
       const diasMax=Math.max(diasExec,diasAL);
       if(diasMax>lim&&x.eot&&x.eot.toLowerCase()!=="fechada"){
         const estado=diasExec>=diasAL?(x.eoe||"Sem estado"):(x.eoal||"Sem estado");
