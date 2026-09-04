@@ -1262,12 +1262,12 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,syncRows,syncMeta,onSa
       const prazo=x.dc||x.dfp||x.dbf;
       if(prazo){const dp=new Date(prazo);const diasP=Math.floor((hoje-dp)/86400000);
         if(diasP>0&&x.eot&&x.eot.toLowerCase()!=="fechada"){
-          r.alertas.push({tipo:"prazo",proc:x.proc,dp:x.dp,dsg:x.dsg,dias:diasP,ep:x.ep,conc:x.conc,eoe:x.eoe,eot:x.eot,prazo:prazo});
+          r.alertas.push({tipo:"prazo",proc:x.proc,dp:x.dp,ot:x.ot,dsg:x.dsg,dias:diasP,ep:x.ep,conc:x.conc,eoe:x.eoe,eot:x.eot,prazo:prazo});
         }else if(diasP>-limPrazo&&diasP<=0&&x.eot&&x.eot.toLowerCase()!=="fechada"){
-          r.alertas.push({tipo:"prazo_proximo",proc:x.proc,dp:x.dp,dsg:x.dsg,dias:Math.abs(diasP),ep:x.ep,conc:x.conc,eoe:x.eoe,eot:x.eot,prazo:prazo});
+          r.alertas.push({tipo:"prazo_proximo",proc:x.proc,dp:x.dp,ot:x.ot,dsg:x.dsg,dias:Math.abs(diasP),ep:x.ep,conc:x.conc,eoe:x.eoe,eot:x.eot,prazo:prazo});
         }}
       if(x.doal&&parseInt(x.doal)>limLic&&x.eoal){
-        r.alertas.push({tipo:"licenca",proc:x.proc,dp:x.dp,dsg:x.dsg,dias:parseInt(x.doal),ep:x.ep,conc:x.conc,eoal:x.eoal,obal:x.obal});
+        r.alertas.push({tipo:"licenca",proc:x.proc,dp:x.dp,ot:x.ot,dsg:x.dsg,dias:parseInt(x.doal),ep:x.ep,conc:x.conc,eoal:x.eoal,obal:x.obal});
       }
       // Alerta: estado operacional sem alteração há mais de 10 dias
       const diasExec=x.doe?parseInt(x.doe):0;
@@ -1516,7 +1516,7 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,syncRows,syncMeta,onSa
                     <span style={{fontSize:10,fontWeight:700,color:"#dc2626",background:"#dc262615",padding:"2px 6px",borderRadius:4}}>🚨 {a.dias}d atrasada</span>
                   </div>
                   <div style={{fontSize:10,color:"var(--text-muted)"}}>{a.dsg}</div>
-                  <div style={{display:"flex",gap:8,marginTop:3,fontSize:9,color:"var(--text-dim)",flexWrap:"wrap"}}><span>{a.dp}</span><span>📍 {a.conc}</span><span>OT: {a.eot}</span><span>Prazo: {fmtD(a.prazo)}</span></div>
+                  <div style={{display:"flex",gap:8,marginTop:3,fontSize:9,color:"var(--text-dim)",flexWrap:"wrap"}}><span>{a.dp}</span>{a.ot&&<span style={{fontWeight:700,color:"var(--accent)"}}>OT: {a.ot}</span>}<span>📍 {a.conc}</span><span>Estado OT: {a.eot}</span><span>Prazo: {fmtD(a.prazo)}</span></div>
                 </WBox>))}
 
                 {result.alertas.filter(a=>a.tipo==="prazo_proximo").length>0&&<div style={{fontSize:11,fontWeight:700,color:"var(--accent)",marginTop:10,marginBottom:6}}>⏰ Prazo próximo ({result.alertas.filter(a=>a.tipo==="prazo_proximo").length})</div>}
@@ -1526,7 +1526,7 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,syncRows,syncMeta,onSa
                     <span style={{fontSize:10,fontWeight:700,color:"var(--accent)",background:"#f59e0b15",padding:"2px 6px",borderRadius:4}}>⏰ {a.dias}d até prazo</span>
                   </div>
                   <div style={{fontSize:10,color:"var(--text-muted)"}}>{a.dsg}</div>
-                  <div style={{display:"flex",gap:8,marginTop:3,fontSize:9,color:"var(--text-dim)",flexWrap:"wrap"}}><span>{a.dp}</span><span>📍 {a.conc}</span><span>OT: {a.eot}</span><span>Prazo: {fmtD(a.prazo)}</span></div>
+                  <div style={{display:"flex",gap:8,marginTop:3,fontSize:9,color:"var(--text-dim)",flexWrap:"wrap"}}><span>{a.dp}</span>{a.ot&&<span style={{fontWeight:700,color:"var(--accent)"}}>OT: {a.ot}</span>}<span>📍 {a.conc}</span><span>Estado OT: {a.eot}</span><span>Prazo: {fmtD(a.prazo)}</span></div>
                 </WBox>))}
 
 
@@ -1537,7 +1537,7 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,syncRows,syncMeta,onSa
                     <span style={{fontSize:10,fontWeight:700,color:a.dias>20?"#dc2626":"#e85d04",background:a.dias>20?"#dc262615":"#e85d0415",padding:"2px 6px",borderRadius:4}}>🔄 {a.dias}d no mesmo estado</span>
                   </div>
                   <div style={{fontSize:10,color:"var(--text-muted)"}}>{a.dsg}</div>
-                  <div style={{display:"flex",gap:8,marginTop:3,fontSize:9,color:"var(--text-dim)",flexWrap:"wrap"}}><span>{a.dp}</span><span>📍 {a.conc}</span><span>OT: {a.eot}</span></div>
+                  <div style={{display:"flex",gap:8,marginTop:3,fontSize:9,color:"var(--text-dim)",flexWrap:"wrap"}}><span>{a.dp}</span>{a.ot&&<span style={{fontWeight:700,color:"var(--accent)"}}>OT: {a.ot}</span>}<span>📍 {a.conc}</span><span>Estado OT: {a.eot}</span></div>
                   <div style={{fontSize:10,color:"#e85d04",marginTop:3}}>⚙️ {a.estado}</div>
                   {a.obs&&<div style={{fontSize:9,color:"var(--text-muted)",marginTop:2}}>📝 {a.obs}</div>}
                 </WBox>))}
@@ -1549,7 +1549,7 @@ function ExcelAnalise({onBack,historico,onUpdateHistorico,syncRows,syncMeta,onSa
                     <span style={{fontSize:10,fontWeight:700,color:"#8b5cf6",background:"#8b5cf615",padding:"2px 6px",borderRadius:4}}>📋 {a.dias}d</span>
                   </div>
                   <div style={{fontSize:10,color:"var(--text-muted)"}}>{a.dsg}</div>
-                  <div style={{display:"flex",gap:8,marginTop:3,fontSize:9,color:"var(--text-dim)",flexWrap:"wrap"}}><span>{a.dp}</span><span>📍 {a.conc}</span><span>{a.eoal}</span></div>
+                  <div style={{display:"flex",gap:8,marginTop:3,fontSize:9,color:"var(--text-dim)",flexWrap:"wrap"}}><span>{a.dp}</span>{a.ot&&<span style={{fontWeight:700,color:"var(--accent)"}}>OT: {a.ot}</span>}<span>📍 {a.conc}</span><span>{a.eoal}</span></div>
                   {a.obal&&<div style={{fontSize:9,color:"#8b5cf6",marginTop:2}}>📝 {a.obal}</div>}
                 </WBox>))}
               </div>
